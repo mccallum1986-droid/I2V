@@ -6,7 +6,7 @@ const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 export const api = axios.create({
   baseURL: `${BASE}/api`,
-  timeout: 30000,
+  timeout: 60000,
 });
 
 api.interceptors.request.use((config) => {
