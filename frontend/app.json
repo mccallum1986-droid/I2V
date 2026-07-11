@@ -75,14 +75,14 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/40ec3404-e192-464b-8e21-419c33de8338"
+      "url": "https://u.expo.dev/fb3c134b-e225-4eff-a205-8102521ee805"
     },
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "40ec3404-e192-464b-8e21-419c33de8338"
+        "projectId": "fb3c134b-e225-4eff-a205-8102521ee805"
       }
     },
-    "owner": "btmccallum"
+    "owner": "btmccallums-organization"
   }
 }
