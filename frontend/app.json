@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "WanStudio",
+    "slug": "frontend",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "frontend",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Select a photo to turn into an AI video",
+        "NSCameraUsageDescription": "Take a photo to turn into an AI video",
+        "NSPhotoLibraryAddUsageDescription": "Save generated videos to your library"
+      },
+      "bundleIdentifier": "com.emergent.aivideostudio.tlzk8p"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO"
+      ],
+      "package": "com.emergent.aivideostudio.tlzk8p"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-image.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000"
+        }
+      ],
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Select a photo to turn into an AI video",
+          "cameraPermission": "Take a photo to turn into an AI video"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Save generated videos to your library",
+          "savePhotosPermission": "Save generated videos to your library",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

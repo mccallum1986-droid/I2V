@@ -1,0 +1,143 @@
+{
+  "app_name": "WanStudio",
+  "personality": "6 Glass / Luxe",
+  "personality_one_liner": "A cinematic, premium AI studio experience emphasizing depth, translucent glass layers, and high-fidelity media.",
+  "color": {
+    "surface": "#FAFAFA", "onSurface": "#171717",
+    "surfaceSecondary": "#FFFFFF", "onSurfaceSecondary": "#525252",
+    "surfaceTertiary": "#F5F5F5", "onSurfaceTertiary": "#A3A3A3",
+    "surfaceInverse": "#0A0A0A", "onSurfaceInverse": "#FAFAFA",
+    "brand": "#059669",
+    "brandPrimary": "#059669", "onBrandPrimary": "#FFFFFF",
+    "brandSecondary": "#D1FAE5", "onBrandSecondary": "#065F46",
+    "brandTertiary": "#ECFDF5", "onBrandTertiary": "#059669",
+    "success": "#10B981", "onSuccess": "#FFFFFF",
+    "warning": "#F59E0B", "onWarning": "#FFFFFF",
+    "error": "#EF4444", "onError": "#FFFFFF",
+    "info": "#3B82F6", "onInfo": "#FFFFFF",
+    "border": "#E5E5E5", "borderStrong": "#D4D4D4", "divider": "#F5F5F5",
+    "dark": {
+      "surface": "#0A0A0A", "onSurface": "#FAFAFA",
+      "surfaceSecondary": "#141414", "onSurfaceSecondary": "#A3A3A3",
+      "surfaceTertiary": "#1F1F1F", "onSurfaceTertiary": "#737373",
+      "surfaceInverse": "#FAFAFA", "onSurfaceInverse": "#171717",
+      "brand": "#10B981",
+      "brandPrimary": "#10B981", "onBrandPrimary": "#022C22",
+      "brandSecondary": "#064E3B", "onBrandSecondary": "#6EE7B7",
+      "brandTertiary": "#022C22", "onBrandTertiary": "#A7F3D0",
+      "success": "#34D399", "onSuccess": "#022C22",
+      "warning": "#FBBF24", "onWarning": "#451A03",
+      "error": "#F87171", "onError": "#450A0A",
+      "info": "#60A5FA", "onInfo": "#1E3A8A",
+      "border": "#262626", "borderStrong": "#404040", "divider": "#1F1F1F"
+    }
+  },
+  "typography": {
+    "displayFontFamily": "Fraunces",
+    "textFontFamily": "Geist",
+    "scale": { "sm": 12, "base": 14, "lg": 16, "xl": 20, "2xl": 24 }
+  },
+  "spacing": { "rule": "Generous vertical breathing room. Cards and list items never flush to the edge.", "xs": 4, "sm": 8, "md": 12, "lg": 16, "xl": 24, "2xl": 32, "3xl": 48 },
+  "radius_tokens": { "sm": 6, "md": 12, "lg": 20, "pill": 999 },
+  "shadow_tier": "1",
+  "navigation": "bottom_tabs",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Bottom tab bar (when content scrolls behind it)",
+      "Sticky headers over scrolling content",
+      "Featured AI model cards overlaying an abstract tinted background",
+      "Modal scrims and generation progress overlays",
+      "Pair blur with a translucent tinted base underneath (≥75% opacity of surface in dark mode) for readability"
+    ],
+    "dont's": [
+      "Form fields",
+      "Body text regions",
+      "Small list items or dense data rows"
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Auth",
+      "purpose": "Cinematic entry point to the premium AI studio.",
+      "states": { "loading": "Subtle pulsing logo overlay", "empty": "N/A", "error": "Glassmorphic toast toast" },
+      "layout": "Full-bleed abstract dark luxury background image with a vertical gradient scrim (transparent to 90% surface at the bottom). Content (title in Fraunces, inputs in Geist, primary CTA) positioned in the bottom 40%."
+    },
+    {
+      "name": "Home",
+      "purpose": "Dashboard to view recent AI video generations and initiate new ones.",
+      "states": { "loading": "Skeleton cards with subtle shimmer", "empty": "Empty gallery illustration centered with a 'Create First Video' CTA", "error": "Readable message with a primary retry button" },
+      "layout": "Scrollable feed with a sticky glass header. Top hero card features the latest video thumbnail behind a glassmorphic overlay and 'Create Video' CTA. Below: Horizontal scroll of 'Recent Generations' (image cards with gradient scrims) and 'Models' section displayed as luxurious glass cards."
+    },
+    {
+      "name": "Create Video",
+      "purpose": "Workflow to upload an image, enter a prompt, select a model, and configure settings.",
+      "states": { "loading": "Spinner during image processing", "empty": "Initial state: empty upload area", "error": "Error toast or inline validation" },
+      "layout": "Single-column scrollable form. Large image upload zone (dashed border or solid rounded container) acting as the visual anchor. Followed by a spacious prompt text area, horizontal model selection cards, and a settings section (sliders for motion, duration, etc.). A sticky 'Generate Video' primary CTA pinned to the bottom above the home indicator, backed by a glass or solid surface gradient."
+    },
+    {
+      "name": "Progress & Queue",
+      "purpose": "Cinematic loading screen showing generation progress and queue status.",
+      "states": { "loading": "Active progress with subtle animations", "empty": "No active tasks", "error": "Failed generation state with retry option" },
+      "layout": "Full-screen dark mode experience (even in light mode, or tinted very darkly) with an abstract background. A central circular or linear progress indicator with percentage, stage text, and a glowing effect. A translucent glass sheet at the bottom for 'Cancel' or 'Queue' details."
+    },
+    {
+      "name": "Results",
+      "purpose": "Immersive video player to review, share, or download the generated video.",
+      "states": { "loading": "Video buffering spinner", "empty": "N/A", "error": "Playback error with retry" },
+      "layout": "Edge-to-edge video player taking up the top 60% of the screen. Bottom 40% contains a glassmorphic panel with title, model used, and action buttons (Download, Share, Duplicate, Favourite) styled as tinted icon containers."
+    },
+    {
+      "name": "Gallery",
+      "purpose": "Archive of all generated videos, with search and filter capabilities.",
+      "states": { "loading": "Skeleton grid", "empty": "Empty gallery illustration with a prompt to create", "error": "Fetch error with retry" },
+      "layout": "Sticky glassmorphic search/filter bar at the top. 2-column masonry or strict grid of video thumbnails. Each card has a bottom-to-top gradient scrim ensuring text (date, model) readability."
+    },
+    {
+      "name": "Settings",
+      "purpose": "Manage account, default settings, and app preferences.",
+      "states": { "loading": "Spinner", "empty": "N/A", "error": "Toast for failed updates" },
+      "layout": "List layout with generous vertical rhythm. Each setting row features a `brandTertiary` tinted icon container on the left, title/subtitle, and a chevron or toggle on the right. Grouped into cards with `surfaceSecondary`."
+    }
+  ],
+  "images": {
+    "auth_background": {
+      "url": "https://images.unsplash.com/photo-1709377058964-929af7f2d02f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDV8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhcmslMjBsdXh1cnklMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4MzA3MzE1Mnww&ixlib=rb-4.1.0&q=85",
+      "dark": "https://images.unsplash.com/photo-1710438399422-2fca27686bcd?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1MDV8MHwxfHNlYXJjaHwxfHxhYnN0cmFjdCUyMGRhcmslMjBsdXh1cnklMjBiYWNrZ3JvdW5kfGVufDB8fHx8MTc4MzA3MzE1Mnww&ixlib=rb-4.1.0&q=85",
+      "alt": "Abstract luxury wavy lines background"
+    },
+    "hero_placeholder_1": {
+      "url": "https://images.unsplash.com/photo-1508185140592-283327020902?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwzfHxjaW5lbWF0aWMlMjBwb3J0cmFpdCUyMHBob3RvZ3JhcGh5JTIwNGt8ZW58MHx8fHwxNzgzMDczMTUxfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Cinematic portrait of a woman"
+    },
+    "hero_placeholder_2": {
+      "url": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODB8MHwxfHNlYXJjaHwxfHxjaW5lbWF0aWMlMjBwb3J0cmFpdCUyMHBob3RvZ3JhcGh5JTIwNGt8ZW58MHx8fHwxNzgzMDczMTUxfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Cinematic portrait lighting"
+    },
+    "empty_gallery": {
+      "url": "https://images.unsplash.com/photo-1762928289094-197055a5d5c3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2MzR8MHwxfHNlYXJjaHwzfHxlbXB0eSUyMGdhbGxlcnklMjBpbGx1c3RyYXRpb258ZW58MHx8fHwxNzgzMDczMTUxfDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Modern art gallery minimalist white walls"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the Glass / Luxe personality constraints. The app must feel cinematic, premium, and expensive.",
+    "Implement glassmorphism using the specified rules: pair any blur with a translucent tinted base underneath (especially in dark mode) to ensure text remains readable.",
+    "For typography, use Fraunces for large display headers and Geist for body text. Ensure font weights never exceed 500.",
+    "Apply gradient-to-dark scrims (top-to-bottom, ending at >=70% surfaceInverse opacity) on all image cards to guarantee text contrast.",
+    "The Create Video screen must have a sticky 'Generate' primary CTA at the bottom, outside the scrollable view, to ensure it is always accessible without scrolling.",
+    "Add subtle haptic feedback for primary buttons, sliders (on commit), and tab navigation."
+  ]
+}
