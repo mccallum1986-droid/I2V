@@ -25,7 +25,7 @@ jobs:
         run: |
           npx eas-cli whoami
           npx eas-cli build:list --limit 1 --non-interactive
-          npx eas-cli update:list --limit 1 --non-interactive
+          npx eas-cli update:list --branch production --limit 1 --non-interactive || true
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       - name: Publish OTA update (production channel)
