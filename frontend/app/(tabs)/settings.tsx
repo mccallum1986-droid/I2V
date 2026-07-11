@@ -177,7 +177,7 @@ export default function Settings() {
 
             {envManaged ? (
               <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12 }}>
-                Key is set on the server (FAL_KEY). Manage it in your host's environment variables.
+                Key is set on the server (FAL_KEY). Manage it in your host&apos;s environment variables.
               </Text>
             ) : (
               <>

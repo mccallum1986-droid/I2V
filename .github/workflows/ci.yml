@@ -19,7 +19,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: pytest
+      - name: pytest (tolerate no tests collected)
+        run: pytest || [ "$?" = "5" ]
 
   frontend:
     runs-on: ubuntu-latest
