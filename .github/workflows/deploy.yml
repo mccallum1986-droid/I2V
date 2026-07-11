@@ -29,7 +29,7 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       - name: Publish OTA update (production channel)
-        run: npx eas-cli update --branch production --channel production --non-interactive --message "${{ github.sha }}"
+        run: npx eas-cli update --channel production --non-interactive --message "${{ github.sha }}"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       - name: Build Android APK (preview profile, no wait)
