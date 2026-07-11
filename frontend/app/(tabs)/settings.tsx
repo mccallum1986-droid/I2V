@@ -220,7 +220,7 @@ export default function Settings() {
               icon="notifications-outline"
               title="Completion alerts"
               subtitle="Get notified when a video is ready"
-              right={<Switch testID="notifications-switch" value={settings.notifications ?? true} onValueChange={toggleNotifications} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor="#fff" />}
+              right={<Switch testID="notifications-switch" value={settings.notifications ?? true} onValueChange={(v) => { toggleNotifications(v); }} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor="#fff" />}
             />
           </Card>
         </View>
