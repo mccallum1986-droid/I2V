@@ -1,0 +1,38 @@
+name: Deploy (OTA update + APK build)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: yarn install --frozen-lockfile
+      - name: EAS health check
+        run: |
+          npx eas-cli whoami
+          npx eas-cli build:list --limit 1 --non-interactive
+          npx eas-cli update:list --limit 1 --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - name: Publish OTA update (production channel)
+        run: npx eas-cli update --branch production --channel production --non-interactive --message "${{ github.sha }}"
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      - name: Build Android APK (preview profile, no wait)
+        run: npx eas-cli build --platform android --profile preview --non-interactive --no-wait
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
