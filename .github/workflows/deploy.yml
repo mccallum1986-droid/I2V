@@ -25,11 +25,11 @@ jobs:
         run: |
           npx eas-cli whoami
           npx eas-cli build:list --limit 1 --non-interactive
-          npx eas-cli update:list --branch production --limit 1 --non-interactive || true
+          npx eas-cli update:list --branch preview --limit 1 --non-interactive || true
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-      - name: Publish OTA update (production channel)
-        run: npx eas-cli update --channel production --environment production --non-interactive --message "${{ github.sha }}"
+      - name: Publish OTA update (preview channel)
+        run: npx eas-cli update --channel preview --environment preview --non-interactive --message "${{ github.sha }}"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       - name: Build Android APK (preview profile, no wait)
