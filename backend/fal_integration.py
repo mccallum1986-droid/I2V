@@ -38,9 +38,10 @@ def _headers(key: str) -> Dict[str, str]:
 
 
 def _app_id(model: str) -> str:
-    # fal's queue status/result endpoints use the full model path, not just
-    # the first two segments — e.g. fal-ai/wan/v2.2-a14b/image-to-video.
-    return model.strip("/")
+    # fal's status/result queue endpoints use only owner/app (first 2 segments).
+    # The full routing path is only needed on submit.
+    parts = [p for p in model.split("/") if p]
+    return "/".join(parts[:2]) if len(parts) >= 2 else model
 
 
 def _build_input(image_base64: str, prompt: str, settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -75,6 +76,8 @@ def submit(model: str, key: str, image_base64: str, prompt: str, settings: Dict[
     )
     if resp.status_code == 401:
         raise RuntimeError("fal.ai rejected the API key (401). Check the key in Settings.")
+    if not resp.ok:
+        raise RuntimeError(f"fal.ai submit error {resp.status_code}: {resp.text[:400]}")
     resp.raise_for_status()
     data = resp.json()
     request_id = data.get("request_id")
@@ -93,6 +96,8 @@ def poll(model: str, key: str, request_id: str) -> Dict[str, Any]:
         headers=_headers(key),
         timeout=POLL_TIMEOUT,
     )
+    if not resp.ok:
+        raise RuntimeError(f"fal.ai poll error {resp.status_code}: {resp.text[:400]}")
     resp.raise_for_status()
     data = resp.json()
     fal_status = (data.get("status") or "").upper()
@@ -116,6 +121,8 @@ def fetch_result(model: str, key: str, request_id: str) -> Dict[str, Any]:
         headers=_headers(key),
         timeout=RESULT_TIMEOUT,
     )
+    if not resp.ok:
+        raise RuntimeError(f"fal.ai result error {resp.status_code}: {resp.text[:400]}")
     resp.raise_for_status()
     data = resp.json()
     # fal Wan returns {"video": {"url": ...}}; some models nest under "output".
