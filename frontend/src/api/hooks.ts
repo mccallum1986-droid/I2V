@@ -242,6 +242,22 @@ export type StudioConfig = {
   gpu_port: number;
 };
 
+export type VastaiAccount = {
+  balance: number;
+  username: string;
+  email: string;
+};
+
+export function useVastaiAccount(enabled = true) {
+  return useQuery({
+    queryKey: ["vastai-account"],
+    enabled,
+    queryFn: async () => (await api.get<VastaiAccount>("/studio/account")).data,
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 60, // refresh balance every minute while screen is open
+  });
+}
+
 export function useGpuStatus(poll = false) {
   return useQuery({
     queryKey: ["gpu-status"],

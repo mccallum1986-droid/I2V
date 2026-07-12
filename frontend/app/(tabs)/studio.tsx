@@ -23,7 +23,9 @@ import {
   useGpuStart,
   useGpuStatus,
   useGpuStop,
+  useStudioConfig,
   useStudioGenerations,
+  useVastaiAccount,
 } from "@/src/api/hooks";
 import { Button, DisplayText, TextField } from "@/src/components/ui";
 import { toast } from "@/src/store/toast";
@@ -127,6 +129,8 @@ export default function Studio() {
   const gpuStop = useGpuStop();
   const createGen = useCreateStudioGeneration();
   const studioGens = useStudioGenerations();
+  const studioCfg = useStudioConfig();
+  const account = useVastaiAccount(studioCfg.data?.configured ?? false);
 
   const [imageB64, setImageB64] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
@@ -273,6 +277,51 @@ export default function Studio() {
             <Text style={{ color: colors.error, fontSize: 12 }}>{gpu.error}</Text>
           )}
         </View>
+
+        {/* Vast.ai balance card */}
+        {studioCfg.data?.configured && (
+          <View style={{ backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.border, gap: spacing.sm }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.xs }}>
+              <Ionicons name="wallet-outline" size={18} color={colors.brandPrimary} />
+              <Text style={{ color: colors.onSurface, fontWeight: "700", fontSize: 15 }}>Vast.ai Account</Text>
+            </View>
+            {account.isLoading ? (
+              <ActivityIndicator size="small" color={colors.brandPrimary} />
+            ) : account.data ? (
+              <View style={{ gap: spacing.xs }}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                  <Text style={{ color: colors.onSurfaceSecondary, fontSize: 14 }}>Balance remaining</Text>
+                  <Text style={{ color: account.data.balance < 2 ? colors.error : colors.success ?? "#22c55e", fontWeight: "700", fontSize: 18 }}>
+                    ${account.data.balance.toFixed(2)}
+                  </Text>
+                </View>
+                {isReady && gpu?.dph_total && (
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={{ color: colors.onSurfaceTertiary, fontSize: 13 }}>Current burn rate</Text>
+                    <Text style={{ color: colors.warning ?? "#f59e0b", fontWeight: "600", fontSize: 13 }}>
+                      ${gpu.dph_total.toFixed(3)}/hr  ·  ${(gpu.dph_total / 60).toFixed(4)}/min
+                    </Text>
+                  </View>
+                )}
+                {isReady && gpu?.dph_total && account.data.balance > 0 && (
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Text style={{ color: colors.onSurfaceTertiary, fontSize: 13 }}>Time left at current rate</Text>
+                    <Text style={{ color: colors.onSurfaceSecondary, fontWeight: "600", fontSize: 13 }}>
+                      {(account.data.balance / gpu.dph_total).toFixed(1)} hrs
+                    </Text>
+                  </View>
+                )}
+                {account.data.balance < 2 && (
+                  <Text style={{ color: colors.error, fontSize: 12, marginTop: spacing.xs }}>
+                    Low balance — top up at vast.ai before generating
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <Text style={{ color: colors.onSurfaceTertiary, fontSize: 13 }}>Could not load balance</Text>
+            )}
+          </View>
+        )}
 
         {/* Generate section — only show when GPU ready */}
         {!isUnconfigured && (

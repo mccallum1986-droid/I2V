@@ -32,6 +32,24 @@ def _vastai_headers(api_key: str) -> Dict[str, str]:
     return {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
 
+def get_account_info(api_key: str) -> Dict[str, Any]:
+    """Return Vast.ai account balance and credit info."""
+    resp = requests.get(
+        f"{VASTAI_BASE}/users/me/",
+        headers=_vastai_headers(api_key),
+        timeout=15,
+    )
+    if not resp.ok:
+        raise RuntimeError(f"Vast.ai account lookup failed {resp.status_code}: {resp.text[:200]}")
+    data = resp.json()
+    # Vast.ai returns credit in dollars as a float
+    return {
+        "balance": round(float(data.get("credit", 0)), 4),
+        "username": data.get("username", ""),
+        "email": data.get("email", ""),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Instance lifecycle
 # ---------------------------------------------------------------------------

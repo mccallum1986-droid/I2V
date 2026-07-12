@@ -650,6 +650,18 @@ async def update_studio_config(body: StudioConfigUpdate, user=Depends(get_curren
     return {"ok": True}
 
 
+@api.get("/studio/account")
+async def studio_account(user=Depends(get_current_user)):
+    cfg = await _get_studio_config()
+    if not cfg["configured"]:
+        raise HTTPException(status_code=400, detail="Studio not configured.")
+    try:
+        info = await asyncio.to_thread(studio_gpu.get_account_info, cfg["vastai_api_key"])
+        return info
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+
 @api.get("/studio/gpu/status")
 async def studio_gpu_status(user=Depends(get_current_user)):
     cfg = await _get_studio_config()
