@@ -210,3 +210,117 @@ export function useDeletePrompt() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["prompts"] }),
   });
 }
+
+// ------------------------------------------------------------------ studio
+export type GpuState = "unconfigured" | "off" | "starting" | "ready" | "error" | "unknown";
+
+export type GpuStatus = {
+  state: GpuState;
+  public_ip: string | null;
+  gpu_name?: string;
+  dph_total?: number;
+  error?: string;
+};
+
+export type StudioGeneration = {
+  id: string;
+  prompt: string;
+  negative_prompt: string;
+  status: GenStatus;
+  progress: number;
+  stage: string;
+  video_url: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StudioConfig = {
+  configured: boolean;
+  vastai_api_key: string;
+  instance_id: string;
+  gpu_port: number;
+};
+
+export function useGpuStatus(poll = false) {
+  return useQuery({
+    queryKey: ["gpu-status"],
+    queryFn: async () => (await api.get<GpuStatus>("/studio/gpu/status")).data,
+    refetchInterval: poll ? 5000 : false,
+    staleTime: 4000,
+  });
+}
+
+export function useGpuStart() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post("/studio/gpu/start")).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["gpu-status"] }),
+  });
+}
+
+export function useGpuStop() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await api.post("/studio/gpu/stop")).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["gpu-status"] }),
+  });
+}
+
+export function useStudioConfig() {
+  return useQuery({
+    queryKey: ["studio-config"],
+    queryFn: async () => (await api.get<StudioConfig>("/studio/config")).data,
+    staleTime: 1000 * 60,
+  });
+}
+
+export function useSetStudioConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { vastai_api_key?: string; instance_id?: string; gpu_port?: number }) =>
+      (await api.put("/studio/config", payload)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["studio-config"] });
+      qc.invalidateQueries({ queryKey: ["gpu-status"] });
+    },
+  });
+}
+
+export function useCreateStudioGeneration() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      prompt: string;
+      negative_prompt: string;
+      image_base64: string;
+      settings: Record<string, any>;
+    }) => (await api.post<StudioGeneration>("/studio/generate", payload)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["studio-generations"] }),
+  });
+}
+
+export function useStudioGenerations() {
+  return useQuery({
+    queryKey: ["studio-generations"],
+    queryFn: async () => (await api.get<StudioGeneration[]>("/studio/generations")).data,
+    refetchInterval: (query) => {
+      const d = query.state.data as StudioGeneration[] | undefined;
+      const active = d?.some((g) => g.status === "queued" || g.status === "processing");
+      return active ? 2000 : false;
+    },
+  });
+}
+
+export function useStudioGeneration(id: string | undefined) {
+  return useQuery({
+    queryKey: ["studio-generation", id],
+    enabled: !!id,
+    queryFn: async () => (await api.get<StudioGeneration>(`/studio/generations/${id}`)).data,
+    refetchInterval: (query) => {
+      const d = query.state.data as StudioGeneration | undefined;
+      if (d && (d.status === "queued" || d.status === "processing")) return 2000;
+      return false;
+    },
+  });
+}

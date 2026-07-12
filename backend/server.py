@@ -21,6 +21,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 import fal_integration as fal
 import providers
+import studio as studio_gpu
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -40,6 +41,8 @@ prompts_col = db["prompts"]
 generations_col = db["generations"]
 reset_col = db["password_reset_tokens"]
 config_col = db["app_config"]
+studio_col = db["studio_config"]
+studio_gens_col = db["studio_generations"]
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +602,200 @@ async def toggle_generation_favourite(gen_id: str, user=Depends(get_current_user
 async def delete_generation(gen_id: str, user=Depends(get_current_user)):
     await generations_col.delete_one({"id": gen_id, "user_id": user["id"]})
     return {"ok": True}
+
+
+# ===========================================================================
+# Studio — self-hosted GPU routes
+# ===========================================================================
+
+async def _get_studio_config() -> Dict[str, Any]:
+    doc = await studio_col.find_one({"_id": "config"}) or {}
+    return {
+        "vastai_api_key": doc.get("vastai_api_key", ""),
+        "instance_id": doc.get("instance_id", ""),
+        "gpu_port": int(doc.get("gpu_port", 8080)),
+        "configured": bool(doc.get("vastai_api_key") and doc.get("instance_id")),
+    }
+
+
+class StudioConfigUpdate(BaseModel):
+    vastai_api_key: str = ""
+    instance_id: str = ""
+    gpu_port: int = 8080
+
+
+class StudioGenerationCreate(BaseModel):
+    prompt: str = Field(min_length=1)
+    negative_prompt: str = ""
+    image_base64: str = Field(min_length=1)
+    settings: Dict[str, Any] = Field(default_factory=dict)
+
+
+@api.get("/studio/config")
+async def get_studio_config(user=Depends(get_current_user)):
+    cfg = await _get_studio_config()
+    # Mask the key before returning
+    key = cfg["vastai_api_key"]
+    return {**cfg, "vastai_api_key": f"...{key[-4:]}" if len(key) > 4 else ("set" if key else "")}
+
+
+@api.put("/studio/config")
+async def update_studio_config(body: StudioConfigUpdate, user=Depends(get_current_user)):
+    update: Dict[str, Any] = {"gpu_port": body.gpu_port}
+    if body.vastai_api_key.strip():
+        update["vastai_api_key"] = body.vastai_api_key.strip()
+    if body.instance_id.strip():
+        update["instance_id"] = body.instance_id.strip()
+    await studio_col.update_one({"_id": "config"}, {"$set": update}, upsert=True)
+    return {"ok": True}
+
+
+@api.get("/studio/gpu/status")
+async def studio_gpu_status(user=Depends(get_current_user)):
+    cfg = await _get_studio_config()
+    if not cfg["configured"]:
+        return {"state": "unconfigured", "public_ip": None}
+    try:
+        instance = await asyncio.to_thread(
+            studio_gpu.get_instance_status, cfg["vastai_api_key"], cfg["instance_id"]
+        )
+        state, public_ip = studio_gpu.parse_gpu_state(instance)
+        return {
+            "state": state,
+            "public_ip": public_ip,
+            "machine_id": instance.get("machine_id"),
+            "gpu_name": instance.get("gpu_name", ""),
+            "dph_total": instance.get("dph_total"),
+        }
+    except Exception as exc:
+        logger.exception("studio gpu status failed")
+        return {"state": "error", "error": str(exc), "public_ip": None}
+
+
+@api.post("/studio/gpu/start")
+async def studio_gpu_start(user=Depends(get_current_user)):
+    cfg = await _get_studio_config()
+    if not cfg["configured"]:
+        raise HTTPException(status_code=400, detail="Studio not configured. Add your Vast.ai key and instance ID in Settings.")
+    try:
+        await asyncio.to_thread(studio_gpu.start_instance, cfg["vastai_api_key"], cfg["instance_id"])
+        return {"ok": True, "message": "GPU starting — usually takes 2-4 minutes."}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@api.post("/studio/gpu/stop")
+async def studio_gpu_stop(user=Depends(get_current_user)):
+    cfg = await _get_studio_config()
+    if not cfg["configured"]:
+        raise HTTPException(status_code=400, detail="Studio not configured.")
+    try:
+        await asyncio.to_thread(studio_gpu.stop_instance, cfg["vastai_api_key"], cfg["instance_id"])
+        return {"ok": True, "message": "GPU stopped. Billing paused."}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@api.post("/studio/generate")
+async def studio_generate(body: StudioGenerationCreate, user=Depends(get_current_user)):
+    cfg = await _get_studio_config()
+    if not cfg["configured"]:
+        raise HTTPException(status_code=400, detail="Studio not configured.")
+
+    # Check GPU is actually running before queuing
+    try:
+        instance = await asyncio.to_thread(
+            studio_gpu.get_instance_status, cfg["vastai_api_key"], cfg["instance_id"]
+        )
+        state, public_ip = studio_gpu.parse_gpu_state(instance)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Could not reach GPU: {exc}")
+
+    if state != "ready" or not public_ip:
+        raise HTTPException(status_code=503, detail=f"GPU is not ready yet (state: {state}). Start it and wait for it to boot.")
+
+    gen_id = str(uuid.uuid4())
+    doc = {
+        "id": gen_id,
+        "user_id": user["id"],
+        "prompt": body.prompt.strip(),
+        "negative_prompt": body.negative_prompt.strip(),
+        "image_base64": body.image_base64,
+        "settings": body.settings,
+        "status": "queued",
+        "progress": 0.0,
+        "stage": "Queued",
+        "video_url": None,
+        "error": None,
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "public_ip": public_ip,
+        "gpu_port": cfg["gpu_port"],
+    }
+    await studio_gens_col.insert_one(doc)
+    asyncio.create_task(_run_studio_generation(gen_id))
+    return {k: v for k, v in doc.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")}
+
+
+@api.get("/studio/generations")
+async def list_studio_generations(user=Depends(get_current_user)):
+    docs = await studio_gens_col.find({"user_id": user["id"]}).sort("created_at", -1).to_list(100)
+    return [{k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")} for d in docs]
+
+
+@api.get("/studio/generations/{gen_id}")
+async def get_studio_generation(gen_id: str, user=Depends(get_current_user)):
+    doc = await studio_gens_col.find_one({"id": gen_id, "user_id": user["id"]})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Studio generation not found")
+    return {k: v for k, v in doc.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")}
+
+
+async def _run_studio_generation(gen_id: str):
+    doc = await studio_gens_col.find_one({"id": gen_id})
+    if not doc:
+        return
+    public_ip = doc["public_ip"]
+    port = doc.get("gpu_port", 8080)
+
+    try:
+        job_id = await asyncio.to_thread(
+            studio_gpu.submit_generation,
+            public_ip, doc["image_base64"], doc["prompt"],
+            doc.get("negative_prompt", ""), doc["settings"], port,
+        )
+    except Exception as exc:
+        await studio_gens_col.update_one({"id": gen_id}, {"$set": {"status": "failed", "error": str(exc), "updated_at": now_iso()}})
+        return
+
+    await studio_gens_col.update_one({"id": gen_id}, {"$set": {"status": "processing", "job_id": job_id, "progress": 5.0, "stage": "Submitted", "updated_at": now_iso()}})
+
+    while True:
+        await asyncio.sleep(3)
+        try:
+            st = await asyncio.to_thread(studio_gpu.poll_generation, public_ip, job_id, port)
+        except Exception as exc:
+            await studio_gens_col.update_one({"id": gen_id}, {"$set": {"status": "failed", "error": str(exc), "updated_at": now_iso()}})
+            return
+
+        status_val = st.get("status", "processing")
+        await studio_gens_col.update_one({"id": gen_id}, {"$set": {
+            "status": status_val if status_val in ("processing", "completed", "failed") else "processing",
+            "progress": st.get("progress", 0),
+            "stage": st.get("stage", ""),
+            "updated_at": now_iso(),
+        }})
+
+        if status_val == "completed":
+            try:
+                result = await asyncio.to_thread(studio_gpu.fetch_result, public_ip, job_id, port)
+                await studio_gens_col.update_one({"id": gen_id}, {"$set": {"video_url": result.get("video_url"), "status": "completed", "progress": 100.0, "stage": "Completed", "updated_at": now_iso()}})
+            except Exception as exc:
+                await studio_gens_col.update_one({"id": gen_id}, {"$set": {"status": "failed", "error": str(exc), "updated_at": now_iso()}})
+            return
+        if status_val == "failed":
+            await studio_gens_col.update_one({"id": gen_id}, {"$set": {"error": st.get("error", "Generation failed"), "updated_at": now_iso()}})
+            return
 
 
 app.include_router(api)

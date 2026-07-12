@@ -4,7 +4,7 @@ import { Modal, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, apiError } from "@/src/api/client";
-import { useModels, useProviderConfig, useSetProviderKey } from "@/src/api/hooks";
+import { useModels, useProviderConfig, useSetProviderKey, useStudioConfig, useSetStudioConfig } from "@/src/api/hooks";
 import { Button, Card, DisplayText, Segmented, TextField } from "@/src/components/ui";
 import { useAuthStore } from "@/src/store/auth";
 import { toast } from "@/src/store/toast";
@@ -42,6 +42,12 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [falKey, setFalKey] = useState("");
   const [savingKey, setSavingKey] = useState(false);
+
+  const studioCfg = useStudioConfig();
+  const setStudioConfig = useSetStudioConfig();
+  const [vastaiKey, setVastaiKey] = useState("");
+  const [instanceId, setInstanceId] = useState("");
+  const [savingStudio, setSavingStudio] = useState(false);
 
   const cfg = providerCfg.data;
   const isLive = cfg?.mode === "live";
@@ -221,6 +227,56 @@ export default function Settings() {
               title="Completion alerts"
               subtitle="Get notified when a video is ready"
               right={<Switch testID="notifications-switch" value={settings.notifications ?? true} onValueChange={(v) => { toggleNotifications(v); }} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor="#fff" />}
+            />
+          </Card>
+        </View>
+
+        {/* Studio — self-hosted GPU */}
+        <View>
+          <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.sm, marginLeft: spacing.xs }}>Studio (Self-hosted GPU)</Text>
+          <Card style={{ gap: spacing.md }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: studioCfg.data?.configured ? colors.success : colors.warning }} />
+              <Text style={{ color: colors.onSurface, fontSize: 15, fontWeight: "700" }}>
+                {studioCfg.data?.configured ? "Configured" : "Not configured"}
+              </Text>
+              {studioCfg.data?.configured && studioCfg.data.vastai_api_key && (
+                <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12 }}>key: {studioCfg.data.vastai_api_key}</Text>
+              )}
+            </View>
+            <Text style={{ color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19 }}>
+              Connect your Vast.ai GPU instance for unrestricted video generation. See the GPU setup guide for how to get started.
+            </Text>
+            <TextField
+              value={vastaiKey}
+              onChangeText={setVastaiKey}
+              placeholder="Vast.ai API key"
+              icon="key-outline"
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TextField
+              value={instanceId}
+              onChangeText={setInstanceId}
+              placeholder="Instance ID (from Vast.ai console)"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Button
+              title={studioCfg.data?.configured ? "Update Studio config" : "Save Studio config"}
+              onPress={async () => {
+                if (!vastaiKey.trim() && !instanceId.trim()) return toast.error("Enter at least one field to update");
+                setSavingStudio(true);
+                try {
+                  await setStudioConfig.mutateAsync({ vastai_api_key: vastaiKey.trim() || undefined, instance_id: instanceId.trim() || undefined });
+                  setVastaiKey(""); setInstanceId("");
+                  toast.success("Studio configured");
+                } catch (e) { toast.error(apiError(e, "Couldn't save Studio config")); }
+                setSavingStudio(false);
+              }}
+              loading={savingStudio}
+              disabled={!vastaiKey.trim() && !instanceId.trim()}
             />
           </Card>
         </View>
