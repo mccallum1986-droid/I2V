@@ -41,9 +41,24 @@ pip install -q \
   python-multipart==0.0.9 \
   httpx==0.27.0
 
-# ── 3. Download Wan model weights ────────────────────────────────────────────
+# ── 3. Volume check ──────────────────────────────────────────────────────────
 echo ""
-echo "[3/5] Downloading Wan 2.1 model weights (this takes ~20 min on first run)..."
+echo "[3/5] Checking storage volume..."
+DISK_AVAIL=$(df -BG /workspace 2>/dev/null | awk 'NR==2 {print $4}' | tr -d 'G')
+if [ -z "$DISK_AVAIL" ] || [ "$DISK_AVAIL" -lt 35 ]; then
+  echo ""
+  echo "⚠️  WARNING: Less than 35GB available at /workspace."
+  echo "   The Wan model needs ~30GB. Make sure your 40GB local volume"
+  echo "   is mounted at /workspace before continuing."
+  echo "   Check Vast.ai console → Storage → your 'wanstudio' volume."
+  echo ""
+  echo "   Continuing anyway — but the download may fail if disk is full."
+  echo ""
+fi
+
+# ── Download Wan model weights ────────────────────────────────────────────
+echo "Downloading Wan 2.1 model weights (this takes ~20 min on first run)..."
+echo "Model will be saved to /workspace/models (your persistent 40GB volume)."
 mkdir -p /workspace/models
 python3 - <<'PYEOF'
 from huggingface_hub import snapshot_download
@@ -275,7 +290,13 @@ cd /workspace/wanstudio
 nohup python3 server.py > /workspace/wanstudio/server.log 2>&1 &
 SERVER_PID=$!
 echo "Server running (PID $SERVER_PID)"
-echo "Logs: tail -f /workspace/wanstudio/server.log"
+echo "Logs:        tail -f /workspace/wanstudio/server.log"
+echo ""
+echo "Storage usage on your 40GB volume:"
+df -h /workspace | awk 'NR==2 {print "  Used: "$3" / "$2" ("$5" full)"}'
+echo ""
+echo "To clear old generated videos and free space:"
+echo "  rm -f /workspace/videos/*.mp4"
 echo ""
 
 # Wait for server to come up
