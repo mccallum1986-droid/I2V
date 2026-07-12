@@ -31,6 +31,8 @@ RESULT_TIMEOUT = 30
 # fal Wan accepts these resolution tiers; anything else is dropped so fal falls
 # back to its own default (keeps us from sending an unsupported value).
 _SAFE_RESOLUTIONS = {"480p", "580p", "720p", "1080p"}
+_SAFE_ASPECT_RATIOS = {"16:9", "9:16", "1:1"}
+_ASPECT_RATIO_DEFAULT = "16:9"
 
 
 def _headers(key: str) -> Dict[str, str]:
@@ -57,6 +59,8 @@ def _build_input(image_base64: str, prompt: str, settings: Dict[str, Any]) -> Di
     resolution = str(settings.get("resolution", "480p"))
     if resolution in _SAFE_RESOLUTIONS:
         payload["resolution"] = resolution
+    aspect_ratio = str(settings.get("aspect_ratio", _ASPECT_RATIO_DEFAULT))
+    payload["aspect_ratio"] = aspect_ratio if aspect_ratio in _SAFE_ASPECT_RATIOS else _ASPECT_RATIO_DEFAULT
     seed = settings.get("seed")
     if seed not in (None, "", 0):
         try:
