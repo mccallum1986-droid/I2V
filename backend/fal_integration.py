@@ -38,8 +38,9 @@ def _headers(key: str) -> Dict[str, str]:
 
 
 def _app_id(model: str) -> str:
-    parts = [p for p in model.split("/") if p]
-    return "/".join(parts[:2]) if len(parts) >= 2 else model
+    # fal's queue status/result endpoints use the full model path, not just
+    # the first two segments — e.g. fal-ai/wan/v2.2-a14b/image-to-video.
+    return model.strip("/")
 
 
 def _build_input(image_base64: str, prompt: str, settings: Dict[str, Any]) -> Dict[str, Any]:
