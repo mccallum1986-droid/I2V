@@ -397,7 +397,8 @@ async def _run_generation(gen_id: str):
     try:
         if live:
             provider_job_id = await asyncio.to_thread(
-                fal.submit, fal_model, key, gen["image_base64"], gen["prompt"], gen["settings"]
+                fal.submit, fal_model, key, gen["image_base64"], gen["prompt"],
+                gen.get("negative_prompt", ""), gen["settings"]
             )
         else:
             provider_job_id = provider.generate_video(
