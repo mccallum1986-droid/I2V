@@ -60,9 +60,19 @@ fi
 echo "Downloading Wan 2.1 model weights (this takes ~20 min on first run)..."
 echo "Model will be saved to /workspace/models (your persistent 40GB volume)."
 mkdir -p /workspace/models
+# Force HuggingFace cache onto the volume, not container disk
+export HF_HOME=/workspace/.huggingface
+export HF_DATASETS_CACHE=/workspace/.huggingface/datasets
+export TRANSFORMERS_CACHE=/workspace/.huggingface/transformers
+mkdir -p /workspace/.huggingface
+
 python3 - <<'PYEOF'
 from huggingface_hub import snapshot_download
 import os
+
+# Ensure all HF cache goes to the volume
+os.environ["HF_HOME"] = "/workspace/.huggingface"
+os.environ["TRANSFORMERS_CACHE"] = "/workspace/.huggingface/transformers"
 
 model_dir = "/workspace/models/wan-2.1-i2v"
 if os.path.exists(model_dir) and len(os.listdir(model_dir)) > 5:
