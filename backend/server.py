@@ -101,6 +101,12 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _make_video_url(public_ip: str, port: int, job_id: str) -> str:
+    # public_ip may already contain :port (e.g. "45.81.32.2:13329") — don't double-append
+    base = f"http://{public_ip}" if ":" in public_ip else f"http://{public_ip}:{port}"
+    return f"{base}/result/{job_id}"
+
+
 DEFAULT_SETTINGS = {
     "default_model": providers.DEFAULT_MODEL,
     "theme": "system",
@@ -540,7 +546,7 @@ async def list_generations(
             public_ip = doc.get("public_ip")
             port = doc.get("gpu_port", 10100)
             if public_ip and job_id:
-                video_url = f"http://{public_ip}:{port}/result/{job_id}"
+                video_url = _make_video_url(public_ip, port, job_id)
                 await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
                 doc["video_url"] = video_url
         results.append({
@@ -580,7 +586,7 @@ async def get_generation(gen_id: str, user=Depends(get_current_user)):
             public_ip = sdoc.get("public_ip")
             port = sdoc.get("gpu_port", 10100)
             if public_ip and job_id:
-                video_url = f"http://{public_ip}:{port}/result/{job_id}"
+                video_url = _make_video_url(public_ip, port, job_id)
                 await studio_gens_col.update_one({"id": sdoc["id"]}, {"$set": {"video_url": video_url}})
                 sdoc["video_url"] = video_url
         return {
@@ -829,7 +835,7 @@ async def list_studio_generations(user=Depends(get_current_user)):
             public_ip = doc.get("public_ip")
             port = doc.get("gpu_port", 10100)
             if public_ip and job_id:
-                video_url = f"http://{public_ip}:{port}/result/{job_id}"
+                video_url = _make_video_url(public_ip, port, job_id)
                 await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
                 doc["video_url"] = video_url
     return [{k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")} for d in docs]
@@ -887,7 +893,7 @@ async def _run_studio_generation(gen_id: str):
         }})
 
         if status_val == "completed":
-            video_url = f"http://{public_ip}:{port}/result/{job_id}"
+            video_url = _make_video_url(public_ip, port, job_id)
             await studio_gens_col.update_one({"id": gen_id}, {"$set": {"video_url": video_url, "status": "completed", "progress": 100.0, "stage": "Completed", "updated_at": now_iso()}})
             return
         if status_val == "failed":
@@ -903,6 +909,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+async def repair_studio_video_urls():
+    """Clear malformed video_urls so they get rebuilt with _make_video_url on next fetch."""
+    docs = await studio_gens_col.find({"status": "completed", "video_url": {"$exists": True, "$ne": None}}).to_list(500)
+    for doc in docs:
+        url = doc.get("video_url", "")
+        # Detect double-port (e.g. "45.81.32.2:13329:8081") or wrong port
+        parts = url.split("://")[-1].split("/")[0]  # host:port portion
+        colon_count = parts.count(":")
+        if colon_count > 1:
+            # Broken: has double port — clear so it gets rebuilt
+            await studio_gens_col.update_one({"id": doc["id"]}, {"$unset": {"video_url": ""}})
+            logger.info("Cleared broken video_url for %s", doc["id"])
 
 
 @app.on_event("shutdown")
