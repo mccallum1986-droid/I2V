@@ -769,6 +769,14 @@ async def get_studio_generation(gen_id: str, user=Depends(get_current_user)):
     return {k: v for k, v in doc.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")}
 
 
+@api.delete("/studio/generations/{gen_id}")
+async def delete_studio_generation(gen_id: str, user=Depends(get_current_user)):
+    result = await studio_gens_col.delete_one({"id": gen_id, "user_id": user["id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Studio generation not found")
+    return {"ok": True}
+
+
 async def _run_studio_generation(gen_id: str):
     doc = await studio_gens_col.find_one({"id": gen_id})
     if not doc:

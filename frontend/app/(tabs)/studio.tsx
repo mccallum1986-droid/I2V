@@ -27,6 +27,8 @@ import {
   useStudioGenerations,
   useVastaiAccount,
 } from "@/src/api/hooks";
+import { api } from "@/src/api/client";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, DisplayText, TextField } from "@/src/components/ui";
 import { toast } from "@/src/store/toast";
 import { radius, spacing, useTheme } from "@/src/theme";
@@ -87,13 +89,15 @@ function GpuBadge({ state, gpuName, dph }: { state: GpuState; gpuName?: string; 
 // ---------------------------------------------------------------------------
 // Recent generation card
 // ---------------------------------------------------------------------------
-function StudioGenCard({ gen }: { gen: any }) {
+function StudioGenCard({ gen, onDelete }: { gen: any; onDelete: (id: string) => void }) {
   const { colors } = useTheme();
   const router = useRouter();
   const isActive = gen.status === "queued" || gen.status === "processing";
   return (
     <Pressable
       onPress={() => gen.video_url && router.push(`/generation/${gen.id}`)}
+      onLongPress={() => onDelete(gen.id)}
+      delayLongPress={600}
       style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border }}
     >
       <View style={{ width: 48, height: 48, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center" }}>
@@ -227,6 +231,17 @@ export default function Studio() {
       setImageB64(null);
     } catch (e) {
       toast.error(apiError(e, "Generation failed"));
+    }
+  };
+
+  const qc = useQueryClient();
+  const deleteStudioGen = async (id: string) => {
+    try {
+      await api.delete(`/studio/generations/${id}`);
+      qc.invalidateQueries({ queryKey: ["studio-generations"] });
+      toast.success("Deleted");
+    } catch {
+      toast.error("Could not delete");
     }
   };
 
@@ -395,7 +410,7 @@ export default function Studio() {
         {recentGens.length > 0 && (
           <View style={{ gap: spacing.sm }}>
             <Text style={{ color: colors.onSurfaceSecondary, fontSize: 13, fontWeight: "600" }}>Recent</Text>
-            {recentGens.slice(0, 5).map((g) => <StudioGenCard key={g.id} gen={g} />)}
+            {recentGens.slice(0, 5).map((g) => <StudioGenCard key={g.id} gen={g} onDelete={deleteStudioGen} />)}
           </View>
         )}
       </KeyboardAwareScrollView>
