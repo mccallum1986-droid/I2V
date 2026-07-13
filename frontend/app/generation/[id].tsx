@@ -5,7 +5,7 @@ import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { useLocalSearchParams, useRouter, Redirect } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -50,9 +50,16 @@ export default function GenerationDetail() {
   const del = useDeleteGeneration();
   const [busy, setBusy] = useState(false);
 
-  const player = useVideoPlayer(gen?.video_url ?? "", (p) => {
+  const player = useVideoPlayer(gen?.video_url ?? null, (p) => {
     p.loop = true;
   });
+
+  useEffect(() => {
+    if (gen?.video_url) {
+      player.replace({ uri: gen.video_url });
+      player.play();
+    }
+  }, [gen?.video_url]);
 
   if (authStatus === "guest") {
     return <Redirect href="/(auth)/login" />;
