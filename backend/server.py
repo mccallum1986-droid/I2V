@@ -851,6 +851,15 @@ async def studio_debug():
                 {"$group": {"_id": None, "total_bytes": {"$sum": "$len"}, "max_bytes": {"$max": "$len"}}}]
     agg = await studio_gens_col.aggregate(pipeline).to_list(1)
     size_info = agg[0] if agg else {}
+    # Detect a user_id mismatch: are the 32 generations owned by the same
+    # user_id(s) that exist in the users collection? No PII — user_ids are
+    # opaque UUIDs; emails are deliberately NOT returned.
+    owners = await studio_gens_col.aggregate(
+        [{"$group": {"_id": "$user_id", "count": {"$sum": 1}}}]
+    ).to_list(50)
+    owner_counts = {str(o["_id"]): o["count"] for o in owners}
+    registered_ids = [u.get("id") for u in await users_col.find({}, {"id": 1, "_id": 0}).to_list(50)]
+    orphaned = {uid: c for uid, c in owner_counts.items() if uid not in registered_ids}
     return {
         "studio_total": studio_total,
         "regular_total": regular_total,
@@ -858,6 +867,9 @@ async def studio_debug():
         "studio_image_total_mb": round(size_info.get("total_bytes", 0) / 1e6, 1),
         "studio_image_max_mb": round(size_info.get("max_bytes", 0) / 1e6, 2),
         "videos_stored": await studio_videos_col.count_documents({}),
+        "registered_user_count": len(registered_ids),
+        "gen_owner_user_ids": owner_counts,
+        "orphaned_gen_owners": orphaned,
     }
 
 
