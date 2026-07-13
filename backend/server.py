@@ -618,10 +618,18 @@ async def get_generation(gen_id: str, user=Depends(get_current_user)):
 @api.post("/generations/{gen_id}/cancel")
 async def cancel_generation(gen_id: str, user=Depends(get_current_user)):
     doc = await generations_col.find_one({"id": gen_id, "user_id": user["id"]})
-    if not doc:
+    if doc:
+        if doc["status"] in ("queued", "processing"):
+            await generations_col.update_one(
+                {"id": gen_id}, {"$set": {"status": "cancelled", "updated_at": now_iso()}}
+            )
+        return {"id": gen_id, "status": "cancelled"}
+    # Fall back to studio generations (separate collection, merged into gallery)
+    sdoc = await studio_gens_col.find_one({"id": gen_id, "user_id": user["id"]})
+    if not sdoc:
         raise HTTPException(status_code=404, detail="Generation not found")
-    if doc["status"] in ("queued", "processing"):
-        await generations_col.update_one(
+    if sdoc.get("status") in ("queued", "processing"):
+        await studio_gens_col.update_one(
             {"id": gen_id}, {"$set": {"status": "cancelled", "updated_at": now_iso()}}
         )
     return {"id": gen_id, "status": "cancelled"}
@@ -674,7 +682,11 @@ async def toggle_generation_favourite(gen_id: str, user=Depends(get_current_user
 
 @api.delete("/generations/{gen_id}")
 async def delete_generation(gen_id: str, user=Depends(get_current_user)):
-    await generations_col.delete_one({"id": gen_id, "user_id": user["id"]})
+    res = await generations_col.delete_one({"id": gen_id, "user_id": user["id"]})
+    if res.deleted_count == 0:
+        # Not a regular generation — try the studio collection (merged into gallery)
+        await studio_gens_col.delete_one({"id": gen_id, "user_id": user["id"]})
+        await studio_videos_col.delete_one({"_id": gen_id})
     return {"ok": True}
 
 
@@ -726,10 +738,6 @@ async def update_studio_config(body: StudioConfigUpdate, user=Depends(get_curren
 
 @api.get("/studio/account")
 async def studio_account(user=Depends(get_current_user)):
-    # TEMP diagnostic: log which account the app is authenticated as and how
-    # many studio generations it owns. Remove once resolved.
-    _mine = await studio_gens_col.count_documents({"user_id": user["id"]})
-    logger.info("[whoami] logged_in_user_id=%s owns_studio_gens=%s", user["id"], _mine)
     cfg = await _get_studio_config()
     if not cfg["configured"]:
         raise HTTPException(status_code=400, detail="Studio not configured.")
@@ -838,74 +846,6 @@ async def list_studio_generations(user=Depends(get_current_user)):
             await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
             doc["video_url"] = video_url
     return [{k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")} for d in docs]
-
-
-@api.get("/studio/debug")
-async def studio_debug():
-    """TEMPORARY diagnostic. Reports studio-generation counts and any docs that
-    fail JSON serialization (which would 500 the list endpoints). Remove after use."""
-    # Lightweight: project OUT the heavy image_base64 field so we don't blow
-    # memory the way the real list endpoints do.
-    proj = {"image_base64": 0}
-    studio_total = await studio_gens_col.count_documents({})
-    regular_total = await generations_col.count_documents({})
-    by_status: Dict[str, int] = {}
-    metas = await studio_gens_col.find({}, proj).sort("created_at", -1).to_list(1000)
-    for d in metas:
-        st = d.get("status", "?")
-        by_status[st] = by_status.get(st, 0) + 1
-    # Aggregate the total bytes of image_base64 across studio docs (this is what
-    # the list endpoints pull into memory on every call).
-    pipeline = [{"$project": {"len": {"$strLenBytes": {"$ifNull": ["$image_base64", ""]}}}},
-                {"$group": {"_id": None, "total_bytes": {"$sum": "$len"}, "max_bytes": {"$max": "$len"}}}]
-    agg = await studio_gens_col.aggregate(pipeline).to_list(1)
-    size_info = agg[0] if agg else {}
-    # Detect a user_id mismatch: are the 32 generations owned by the same
-    # user_id(s) that exist in the users collection? No PII — user_ids are
-    # opaque UUIDs; emails are deliberately NOT returned.
-    owners = await studio_gens_col.aggregate(
-        [{"$group": {"_id": "$user_id", "count": {"$sum": 1}}}]
-    ).to_list(50)
-    owner_counts = {str(o["_id"]): o["count"] for o in owners}
-    registered_ids = [u.get("id") for u in await users_col.find({}, {"id": 1, "_id": 0}).to_list(50)]
-    orphaned = {uid: c for uid, c in owner_counts.items() if uid not in registered_ids}
-
-    # GPU config + live state (diagnoses the "GPU won't start" problem). The key
-    # is never exposed — only its last 4 chars and whether it's set.
-    cfg = await _get_studio_config()
-    key = cfg.get("vastai_api_key", "")
-    gpu: Dict[str, Any] = {
-        "configured": cfg["configured"],
-        "instance_id": cfg.get("instance_id", ""),
-        "gpu_port": cfg.get("gpu_port"),
-        "key_tail": (f"...{key[-4:]}" if len(key) > 4 else ("set" if key else "MISSING")),
-    }
-    if cfg["configured"]:
-        try:
-            instance = await asyncio.to_thread(
-                studio_gpu.get_instance_status, cfg["vastai_api_key"], cfg["instance_id"]
-            )
-            state, public_ip = studio_gpu.parse_gpu_state(instance)
-            gpu["live_state"] = state
-            gpu["public_ip"] = public_ip
-            gpu["actual_status"] = instance.get("actual_status")
-            gpu["intended_status"] = instance.get("intended_status")
-            gpu["ports_10100"] = instance.get("ports", {}).get("10100/tcp")
-        except Exception as exc:
-            gpu["error"] = f"{type(exc).__name__}: {exc}"[:300]
-
-    return {
-        "gpu": gpu,
-        "studio_total": studio_total,
-        "regular_total": regular_total,
-        "studio_by_status": by_status,
-        "studio_image_total_mb": round(size_info.get("total_bytes", 0) / 1e6, 1),
-        "studio_image_max_mb": round(size_info.get("max_bytes", 0) / 1e6, 2),
-        "videos_stored": await studio_videos_col.count_documents({}),
-        "registered_user_count": len(registered_ids),
-        "gen_owner_user_ids": owner_counts,
-        "orphaned_gen_owners": orphaned,
-    }
 
 
 @api.get("/studio/generations/{gen_id}/video")
@@ -1084,6 +1024,19 @@ async def repair_studio_video_urls():
         if "/studio/generations/" not in url or url.startswith("http://"):
             await studio_gens_col.update_one({"id": doc["id"]}, {"$unset": {"video_url": ""}})
             logger.info("Cleared stale video_url for %s", doc["id"])
+
+    # Fail studio generations stuck in queued/processing for over 30 min. Their
+    # polling task died (instance destroyed or backend restart), so they'd spin
+    # forever. now_iso() is a tz-aware ISO string, so string comparison is valid.
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    stale = await studio_gens_col.update_many(
+        {"status": {"$in": ["queued", "processing"]}, "updated_at": {"$lt": cutoff}},
+        {"$set": {"status": "failed", "error": "Generation interrupted (GPU instance changed).",
+                  "stage": "Failed", "updated_at": now_iso()}},
+    )
+    if stale.modified_count:
+        logger.info("Marked %d stale studio generations as failed", stale.modified_count)
 
 
 @app.on_event("shutdown")
