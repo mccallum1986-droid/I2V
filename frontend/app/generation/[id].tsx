@@ -49,17 +49,30 @@ export default function GenerationDetail() {
   const toggleFav = useToggleGenerationFav();
   const del = useDeleteGeneration();
   const [busy, setBusy] = useState(false);
-
-  const player = useVideoPlayer(gen?.video_url ?? null, (p) => {
-    p.loop = true;
-  });
+  const [localVideoUri, setLocalVideoUri] = useState<string | null>(null);
+  const [videoLoading, setVideoLoading] = useState(false);
 
   useEffect(() => {
-    if (gen?.video_url) {
-      player.replace({ uri: gen.video_url });
-      player.play();
-    }
+    if (!gen?.video_url) return;
+    const cacheKey = `${gen.id}.mp4`;
+    const cachePath = (FileSystem.cacheDirectory ?? "") + cacheKey;
+    setVideoLoading(true);
+    FileSystem.getInfoAsync(cachePath).then((info) => {
+      if (info.exists) {
+        setLocalVideoUri(cachePath);
+        setVideoLoading(false);
+      } else {
+        FileSystem.downloadAsync(gen.video_url!, cachePath)
+          .then(({ uri }) => { setLocalVideoUri(uri); setVideoLoading(false); })
+          .catch(() => { setLocalVideoUri(gen.video_url!); setVideoLoading(false); });
+      }
+    });
   }, [gen?.video_url]);
+
+  const player = useVideoPlayer(localVideoUri, (p) => {
+    p.loop = true;
+    p.play();
+  });
 
   if (authStatus === "guest") {
     return <Redirect href="/(auth)/login" />;
@@ -166,7 +179,13 @@ export default function GenerationDetail() {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.xl }} showsVerticalScrollIndicator={false}>
         {/* Media area */}
         {isDone && gen.video_url ? (
-          <VideoView testID="video-player" player={player} style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: radius.lg, backgroundColor: "#000" }} allowsFullscreen nativeControls contentFit="contain" />
+          localVideoUri && !videoLoading ? (
+            <VideoView testID="video-player" player={player} style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: radius.lg, backgroundColor: "#000" }} allowsFullscreen nativeControls contentFit="contain" />
+          ) : (
+            <View style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: radius.lg, backgroundColor: "#000", alignItems: "center", justifyContent: "center" }}>
+              <ActivityIndicator color={colors.brandPrimary} />
+            </View>
+          )
         ) : (
           <View style={{ width: "100%", aspectRatio: 16 / 9, borderRadius: radius.lg, overflow: "hidden", backgroundColor: colors.surfaceTertiary }}>
             <Image source={{ uri: dataUri(gen.thumbnail_base64) }} style={{ flex: 1, opacity: 0.5 }} contentFit="cover" blurRadius={isActive ? 8 : 0} />
