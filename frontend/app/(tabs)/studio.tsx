@@ -145,6 +145,17 @@ export default function Studio() {
   const isOff = state === "off";
   const isUnconfigured = state === "unconfigured";
 
+  // Auto-start GPU when tab opens and it's off
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (autoStarted.current) return;
+    if (state === "off") {
+      autoStarted.current = true;
+      gpuStart.mutate();
+      toast.success("GPU auto-starting…");
+    }
+  }, [state]);
+
   const pickImage = async () => {
     const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
     let s = perm.status;
