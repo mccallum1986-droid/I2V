@@ -312,7 +312,13 @@ export function useCreateStudioGeneration() {
       image_base64: string;
       settings: Record<string, any>;
     }) => (await api.post<StudioGeneration>("/studio/generate", payload)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["studio-generations"] }),
+    onSuccess: () => {
+      // Studio jobs are also merged into the main gallery (["generations"]),
+      // so invalidate both — otherwise the gallery never refetches and the new
+      // processing job stays invisible until a manual refresh.
+      qc.invalidateQueries({ queryKey: ["studio-generations"] });
+      qc.invalidateQueries({ queryKey: ["generations"] });
+    },
   });
 }
 
