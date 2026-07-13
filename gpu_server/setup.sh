@@ -56,9 +56,9 @@ if [ -z "$DISK_AVAIL" ] || [ "$DISK_AVAIL" -lt 35 ]; then
   echo ""
 fi
 
-# ── Download Wan model weights ────────────────────────────────────────────
-echo "Downloading Wan 2.1 model weights (this takes ~20 min on first run)..."
-echo "Model will be saved to /workspace/models (your persistent 40GB volume)."
+# ── Download CogVideoX model weights ──────────────────────────────────────
+echo "Downloading CogVideoX-5B-I2V model (~17GB, ~5 min)..."
+echo "Model will be saved to /workspace/models (your persistent volume)."
 mkdir -p /workspace/models
 # Force HuggingFace cache onto the volume, not container disk
 export HF_HOME=/workspace/.huggingface
@@ -70,18 +70,16 @@ python3 - <<'PYEOF'
 from huggingface_hub import snapshot_download
 import os
 
-# Ensure all HF cache goes to the volume
 os.environ["HF_HOME"] = "/workspace/.huggingface"
 os.environ["TRANSFORMERS_CACHE"] = "/workspace/.huggingface/transformers"
 
-model_dir = "/workspace/models/wan-2.1-i2v"
+model_dir = "/workspace/models/cogvideox-5b-i2v"
 if os.path.exists(model_dir) and len(os.listdir(model_dir)) > 5:
     print("  Model already downloaded, skipping.")
 else:
-    print("  Downloading from HuggingFace (Wan-AI/Wan2.1-I2V-1.3B-480P)...")
-    print("  (~10GB — fits comfortably on a 57GB volume)")
+    print("  Downloading THUDM/CogVideoX-5b-I2V (~17GB)...")
     snapshot_download(
-        repo_id="Wan-AI/Wan2.1-I2V-1.3B-480P",
+        repo_id="THUDM/CogVideoX-5b-I2V",
         local_dir=model_dir,
         ignore_patterns=["*.md", "*.txt", "flax_model*", "tf_model*"],
     )
@@ -113,7 +111,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 import torch
-from diffusers import WanImageToVideoPipeline
+from diffusers import CogVideoXImageToVideoPipeline
 from diffusers.utils import export_to_video
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -121,7 +119,7 @@ from PIL import Image
 import uvicorn
 from pydantic import BaseModel
 
-MODEL_DIR = os.environ.get("MODEL_DIR", "/workspace/models/wan-2.1-i2v")
+MODEL_DIR = os.environ.get("MODEL_DIR", "/workspace/models/cogvideox-5b-i2v")
 VIDEO_DIR = "/workspace/videos"
 PORT = int(os.environ.get("PORT", "8080"))
 
@@ -130,12 +128,14 @@ os.makedirs(VIDEO_DIR, exist_ok=True)
 app = FastAPI(title="WanStudio GPU Server")
 
 # ── Pipeline (loaded once at startup) ────────────────────────────────────────
-print("Loading Wan pipeline...", flush=True)
-pipe = WanImageToVideoPipeline.from_pretrained(
+print("Loading CogVideoX pipeline...", flush=True)
+pipe = CogVideoXImageToVideoPipeline.from_pretrained(
     MODEL_DIR,
     torch_dtype=torch.bfloat16,
 )
 pipe.enable_model_cpu_offload()
+pipe.vae.enable_slicing()
+pipe.vae.enable_tiling()
 print("Pipeline ready.", flush=True)
 
 # ── Job store ────────────────────────────────────────────────────────────────
@@ -190,12 +190,12 @@ def _run_generation(job_id: str, image_b64: str, prompt: str, negative_prompt: s
         output = pipe(
             image=image,
             prompt=prompt,
-            negative_prompt=negative_prompt or "",
             height=height,
             width=width,
             num_frames=num_frames,
-            guidance_scale=5.0,
-            num_inference_steps=30,
+            guidance_scale=6.0,
+            num_inference_steps=50,
+            use_dynamic_cfg=True,
         )
 
         with _lock:
