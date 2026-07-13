@@ -78,9 +78,10 @@ model_dir = "/workspace/models/wan-2.1-i2v"
 if os.path.exists(model_dir) and len(os.listdir(model_dir)) > 5:
     print("  Model already downloaded, skipping.")
 else:
-    print("  Downloading from HuggingFace (Wan-AI/Wan2.1-I2V-14B-480P)...")
+    print("  Downloading from HuggingFace (Wan-AI/Wan2.1-I2V-1.3B-480P)...")
+    print("  (~10GB — fits comfortably on a 57GB volume)")
     snapshot_download(
-        repo_id="Wan-AI/Wan2.1-I2V-14B-480P",
+        repo_id="Wan-AI/Wan2.1-I2V-1.3B-480P",
         local_dir=model_dir,
         ignore_patterns=["*.md", "*.txt", "flax_model*", "tf_model*"],
     )
