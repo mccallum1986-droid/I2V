@@ -543,11 +543,15 @@ async def list_generations(
         query["prompt"] = {"$regex": search, "$options": "i"}
     sort_field = "model" if sort == "model" else "created_at"
     direction = 1 if sort == "model" else -1
-    docs = await generations_col.find(query).sort(sort_field, direction).to_list(500)
+    # Project OUT heavy base64 image fields — a list of 30+ full-res images is
+    # ~11MB of JSON, which the app can't parse/render (it comes back 200 but the
+    # gallery shows nothing). The per-item detail endpoint still returns them.
+    LIST_PROJ = {"image_base64": 0, "thumbnail_base64": 0}
+    docs = await generations_col.find(query, LIST_PROJ).sort(sort_field, direction).to_list(500)
     results = [public_generation(d) for d in docs]
 
-    # Merge studio generations into gallery
-    studio_docs = await studio_gens_col.find({"user_id": user["id"]}).sort("created_at", -1).to_list(100)
+    # Merge studio generations into gallery (also without embedded images)
+    studio_docs = await studio_gens_col.find({"user_id": user["id"]}, LIST_PROJ).sort("created_at", -1).to_list(100)
     for doc in studio_docs:
         if doc.get("status") == "completed" and not doc.get("video_url"):
             video_url = _make_video_url(doc["id"])
@@ -560,7 +564,7 @@ async def list_generations(
             "model": "studio",
             "model_name": "Wan 2.1 I2V-14B",
             "image_base64": "",
-            "thumbnail_base64": doc.get("image_base64", ""),
+            "thumbnail_base64": "",
             "settings": doc.get("settings", {}),
             "status": doc.get("status", "processing"),
             "progress": doc.get("progress", 0),
@@ -825,7 +829,8 @@ async def studio_generate(body: StudioGenerationCreate, user=Depends(get_current
 
 @api.get("/studio/generations")
 async def list_studio_generations(user=Depends(get_current_user)):
-    docs = await studio_gens_col.find({"user_id": user["id"]}).sort("created_at", -1).to_list(100)
+    # Exclude the heavy base64 image so this stays small (it's polled every ~2s).
+    docs = await studio_gens_col.find({"user_id": user["id"]}, {"image_base64": 0}).sort("created_at", -1).to_list(100)
     # Fix any completed gens missing video_url
     for doc in docs:
         if doc.get("status") == "completed" and not doc.get("video_url"):
