@@ -784,17 +784,11 @@ async def studio_generate(body: StudioGenerationCreate, user=Depends(get_current
     if not cfg["configured"]:
         raise HTTPException(status_code=400, detail="Studio not configured.")
 
-    # Check GPU is actually running before queuing
-    try:
-        instance = await asyncio.to_thread(
-            studio_gpu.get_instance_status, cfg["vastai_api_key"], cfg["instance_id"]
-        )
-        state, public_ip = studio_gpu.parse_gpu_state(instance)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"Could not reach GPU: {exc}")
-
-    if state != "ready" or not public_ip:
-        raise HTTPException(status_code=503, detail=f"GPU is not ready yet (state: {state}). Start it and wait for it to boot.")
+    # NOTE: We deliberately do NOT check GPU readiness here. That check hits the
+    # Vast.ai API synchronously and can take 10-20s or hang, which blocks the
+    # request, times out the app, and leaves the generation invisible in the
+    # gallery even though it started. The readiness check now happens inside
+    # _run_studio_generation so this endpoint returns a "queued" job instantly.
 
     from fal_integration import _PROMPT_PREFIX, _NEGATIVE_BASE
     user_prompt = body.prompt.strip()
@@ -817,7 +811,7 @@ async def studio_generate(body: StudioGenerationCreate, user=Depends(get_current
         "error": None,
         "created_at": now_iso(),
         "updated_at": now_iso(),
-        "public_ip": public_ip,
+        "public_ip": None,
         "gpu_port": cfg["gpu_port"],
     }
     await studio_gens_col.insert_one(doc)
@@ -914,8 +908,30 @@ async def _run_studio_generation(gen_id: str):
     doc = await studio_gens_col.find_one({"id": gen_id})
     if not doc:
         return
-    public_ip = doc["public_ip"]
-    port = doc.get("gpu_port", 8081)
+
+    # Resolve GPU readiness + public IP here (kept off the request path so the
+    # app gets an instant "queued" generation instead of blocking on Vast.ai).
+    cfg = await _get_studio_config()
+    if not cfg["configured"]:
+        await studio_gens_col.update_one({"id": gen_id}, {"$set": {"status": "failed", "error": "Studio not configured.", "updated_at": now_iso()}})
+        return
+
+    await studio_gens_col.update_one({"id": gen_id}, {"$set": {"stage": "Checking GPU", "updated_at": now_iso()}})
+    try:
+        instance = await asyncio.to_thread(
+            studio_gpu.get_instance_status, cfg["vastai_api_key"], cfg["instance_id"]
+        )
+        state, public_ip = studio_gpu.parse_gpu_state(instance)
+    except Exception as exc:
+        await studio_gens_col.update_one({"id": gen_id}, {"$set": {"status": "failed", "error": f"Could not reach GPU: {exc}", "updated_at": now_iso()}})
+        return
+
+    if state != "ready" or not public_ip:
+        await studio_gens_col.update_one({"id": gen_id}, {"$set": {"status": "failed", "error": f"GPU is not ready (state: {state}). Start it and wait for it to boot.", "updated_at": now_iso()}})
+        return
+
+    port = cfg["gpu_port"]
+    await studio_gens_col.update_one({"id": gen_id}, {"$set": {"public_ip": public_ip, "stage": "Submitting", "updated_at": now_iso()}})
 
     try:
         job_id = await asyncio.to_thread(
