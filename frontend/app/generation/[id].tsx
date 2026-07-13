@@ -54,17 +54,19 @@ export default function GenerationDetail() {
 
   useEffect(() => {
     if (!gen?.video_url) return;
-    const cacheKey = `${gen.id}.mp4`;
-    const cachePath = (FileSystem.cacheDirectory ?? "") + cacheKey;
+    // Resolve relative proxy URLs (e.g. "/api/studio/...") against the backend host.
+    const base = (process.env.EXPO_PUBLIC_BACKEND_URL ?? "").replace(/\/$/, "");
+    const remoteUrl = gen.video_url.startsWith("/") ? `${base}${gen.video_url}` : gen.video_url;
+    const cachePath = (FileSystem.cacheDirectory ?? "") + `${gen.id}.mp4`;
     setVideoLoading(true);
     FileSystem.getInfoAsync(cachePath).then((info) => {
       if (info.exists) {
         setLocalVideoUri(cachePath);
         setVideoLoading(false);
       } else {
-        FileSystem.downloadAsync(gen.video_url!, cachePath)
+        FileSystem.downloadAsync(remoteUrl, cachePath)
           .then(({ uri }) => { setLocalVideoUri(uri); setVideoLoading(false); })
-          .catch(() => { setLocalVideoUri(gen.video_url!); setVideoLoading(false); });
+          .catch(() => { setLocalVideoUri(remoteUrl); setVideoLoading(false); });
       }
     });
   }, [gen?.video_url]);

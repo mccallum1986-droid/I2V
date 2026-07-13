@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+import requests
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -101,10 +102,15 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _make_video_url(public_ip: str, port: int, job_id: str) -> str:
-    # public_ip may already contain :port (e.g. "45.81.32.2:13329") — don't double-append
-    base = f"http://{public_ip}" if ":" in public_ip else f"http://{public_ip}:{port}"
-    return f"{base}/result/{job_id}"
+# The mobile app is a standalone build with no cleartext-HTTP exception, so it
+# cannot load the GPU's http:// video endpoint directly. We serve every studio
+# video through this HTTPS backend instead (see stream_studio_video), which
+# proxies the bytes from the GPU. RENDER_EXTERNAL_URL is injected by Render.
+RENDER_BASE_URL = (os.environ.get("RENDER_EXTERNAL_URL") or os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
+
+
+def _make_video_url(gen_id: str) -> str:
+    return f"{RENDER_BASE_URL}/api/studio/generations/{gen_id}/video"
 
 
 DEFAULT_SETTINGS = {
@@ -542,13 +548,9 @@ async def list_generations(
     studio_docs = await studio_gens_col.find({"user_id": user["id"]}).sort("created_at", -1).to_list(100)
     for doc in studio_docs:
         if doc.get("status") == "completed" and not doc.get("video_url"):
-            job_id = doc.get("job_id") or doc.get("id")
-            public_ip = doc.get("public_ip")
-            port = doc.get("gpu_port", 10100)
-            if public_ip and job_id:
-                video_url = _make_video_url(public_ip, port, job_id)
-                await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
-                doc["video_url"] = video_url
+            video_url = _make_video_url(doc["id"])
+            await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
+            doc["video_url"] = video_url
         results.append({
             "id": doc["id"],
             "prompt": doc.get("prompt", ""),
@@ -582,13 +584,9 @@ async def get_generation(gen_id: str, user=Depends(get_current_user)):
     sdoc = await studio_gens_col.find_one({"id": gen_id, "user_id": user["id"]})
     if sdoc:
         if sdoc.get("status") == "completed" and not sdoc.get("video_url"):
-            job_id = sdoc.get("job_id") or sdoc.get("id")
-            public_ip = sdoc.get("public_ip")
-            port = sdoc.get("gpu_port", 10100)
-            if public_ip and job_id:
-                video_url = _make_video_url(public_ip, port, job_id)
-                await studio_gens_col.update_one({"id": sdoc["id"]}, {"$set": {"video_url": video_url}})
-                sdoc["video_url"] = video_url
+            video_url = _make_video_url(sdoc["id"])
+            await studio_gens_col.update_one({"id": sdoc["id"]}, {"$set": {"video_url": video_url}})
+            sdoc["video_url"] = video_url
         return {
             "id": sdoc["id"],
             "prompt": sdoc.get("prompt", ""),
@@ -831,14 +829,50 @@ async def list_studio_generations(user=Depends(get_current_user)):
     # Fix any completed gens missing video_url
     for doc in docs:
         if doc.get("status") == "completed" and not doc.get("video_url"):
-            job_id = doc.get("job_id") or doc.get("id")
-            public_ip = doc.get("public_ip")
-            port = doc.get("gpu_port", 10100)
-            if public_ip and job_id:
-                video_url = _make_video_url(public_ip, port, job_id)
-                await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
-                doc["video_url"] = video_url
+            video_url = _make_video_url(doc["id"])
+            await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
+            doc["video_url"] = video_url
     return [{k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")} for d in docs]
+
+
+@api.get("/studio/generations/{gen_id}/video")
+async def stream_studio_video(gen_id: str):
+    """Proxy a studio video from the GPU over HTTPS.
+
+    Unauthenticated on purpose: the native video player / downloader can't attach
+    the auth header, and gen_id is an unguessable UUID. The app cannot reach the
+    GPU's cleartext http:// endpoint directly, so we fetch and re-serve it here.
+    """
+    doc = await studio_gens_col.find_one({"id": gen_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    public_ip = doc.get("public_ip")
+    port = doc.get("gpu_port", 10100)
+    job_id = doc.get("job_id") or doc.get("id")
+    if not public_ip:
+        raise HTTPException(status_code=404, detail="Video source unavailable")
+    base = f"http://{public_ip}" if ":" in str(public_ip) else f"http://{public_ip}:{port}"
+    gpu_url = f"{base}/result/{job_id}"
+
+    def _fetch() -> bytes:
+        r = requests.get(gpu_url, timeout=60)
+        r.raise_for_status()
+        return r.content
+
+    try:
+        content = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch video from GPU: {exc}")
+
+    return Response(
+        content=content,
+        media_type="video/mp4",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'inline; filename="{gen_id}.mp4"',
+        },
+    )
 
 
 @api.get("/studio/generations/{gen_id}")
@@ -893,7 +927,7 @@ async def _run_studio_generation(gen_id: str):
         }})
 
         if status_val == "completed":
-            video_url = _make_video_url(public_ip, port, job_id)
+            video_url = _make_video_url(gen_id)
             await studio_gens_col.update_one({"id": gen_id}, {"$set": {"video_url": video_url, "status": "completed", "progress": 100.0, "stage": "Completed", "updated_at": now_iso()}})
             return
         if status_val == "failed":
@@ -913,17 +947,17 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def repair_studio_video_urls():
-    """Clear malformed video_urls so they get rebuilt with _make_video_url on next fetch."""
+    """Clear any video_url that isn't the HTTPS proxy form so it rebuilds correctly.
+
+    Old rows point straight at the GPU's http:// endpoint, which the app can't load.
+    Anything that isn't our /studio/generations/{id}/video proxy path gets reset.
+    """
     docs = await studio_gens_col.find({"status": "completed", "video_url": {"$exists": True, "$ne": None}}).to_list(500)
     for doc in docs:
-        url = doc.get("video_url", "")
-        # Detect double-port (e.g. "45.81.32.2:13329:8081") or wrong port
-        parts = url.split("://")[-1].split("/")[0]  # host:port portion
-        colon_count = parts.count(":")
-        if colon_count > 1:
-            # Broken: has double port — clear so it gets rebuilt
+        url = doc.get("video_url") or ""
+        if "/studio/generations/" not in url or url.startswith("http://"):
             await studio_gens_col.update_one({"id": doc["id"]}, {"$unset": {"video_url": ""}})
-            logger.info("Cleared broken video_url for %s", doc["id"])
+            logger.info("Cleared stale video_url for %s", doc["id"])
 
 
 @app.on_event("shutdown")
