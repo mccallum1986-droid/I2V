@@ -530,7 +530,41 @@ async def list_generations(
     sort_field = "model" if sort == "model" else "created_at"
     direction = 1 if sort == "model" else -1
     docs = await generations_col.find(query).sort(sort_field, direction).to_list(500)
-    return [public_generation(d) for d in docs]
+    results = [public_generation(d) for d in docs]
+
+    # Merge studio generations into gallery
+    studio_docs = await studio_gens_col.find({"user_id": user["id"]}).sort("created_at", -1).to_list(100)
+    for doc in studio_docs:
+        if doc.get("status") == "completed" and not doc.get("video_url"):
+            job_id = doc.get("job_id") or doc.get("id")
+            public_ip = doc.get("public_ip")
+            port = doc.get("gpu_port", 10100)
+            if public_ip and job_id:
+                video_url = f"http://{public_ip}:{port}/result/{job_id}"
+                await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
+                doc["video_url"] = video_url
+        results.append({
+            "id": doc["id"],
+            "prompt": doc.get("prompt", ""),
+            "negative_prompt": doc.get("negative_prompt", ""),
+            "model": "studio",
+            "model_name": "Studio (Self-hosted)",
+            "image_base64": "",
+            "thumbnail_base64": "",
+            "settings": doc.get("settings", {}),
+            "status": doc.get("status", "processing"),
+            "progress": doc.get("progress", 0),
+            "stage": doc.get("stage", ""),
+            "video_url": doc.get("video_url"),
+            "error": doc.get("error"),
+            "is_favourite": False,
+            "est_seconds": 240,
+            "created_at": doc.get("created_at", ""),
+            "updated_at": doc.get("updated_at", ""),
+        })
+
+    results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return results
 
 
 @api.get("/generations/{gen_id}")
@@ -758,6 +792,16 @@ async def studio_generate(body: StudioGenerationCreate, user=Depends(get_current
 @api.get("/studio/generations")
 async def list_studio_generations(user=Depends(get_current_user)):
     docs = await studio_gens_col.find({"user_id": user["id"]}).sort("created_at", -1).to_list(100)
+    # Fix any completed gens missing video_url
+    for doc in docs:
+        if doc.get("status") == "completed" and not doc.get("video_url"):
+            job_id = doc.get("job_id") or doc.get("id")
+            public_ip = doc.get("public_ip")
+            port = doc.get("gpu_port", 10100)
+            if public_ip and job_id:
+                video_url = f"http://{public_ip}:{port}/result/{job_id}"
+                await studio_gens_col.update_one({"id": doc["id"]}, {"$set": {"video_url": video_url}})
+                doc["video_url"] = video_url
     return [{k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")} for d in docs]
 
 
