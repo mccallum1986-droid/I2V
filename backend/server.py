@@ -613,7 +613,7 @@ async def _get_studio_config() -> Dict[str, Any]:
     return {
         "vastai_api_key": doc.get("vastai_api_key", ""),
         "instance_id": doc.get("instance_id", ""),
-        "gpu_port": int(doc.get("gpu_port", 8080)),
+        "gpu_port": int(doc.get("gpu_port", 8081)),
         "configured": bool(doc.get("vastai_api_key") and doc.get("instance_id")),
     }
 
@@ -621,7 +621,7 @@ async def _get_studio_config() -> Dict[str, Any]:
 class StudioConfigUpdate(BaseModel):
     vastai_api_key: str = ""
     instance_id: str = ""
-    gpu_port: int = 8080
+    gpu_port: int = 8081
 
 
 class StudioGenerationCreate(BaseModel):
@@ -768,7 +768,7 @@ async def _run_studio_generation(gen_id: str):
     if not doc:
         return
     public_ip = doc["public_ip"]
-    port = doc.get("gpu_port", 8080)
+    port = doc.get("gpu_port", 8081)
 
     try:
         job_id = await asyncio.to_thread(
