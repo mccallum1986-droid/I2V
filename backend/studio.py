@@ -84,9 +84,9 @@ def parse_gpu_state(instance: Dict[str, Any]) -> Tuple[str, Optional[str]]:
     intended_status = (instance.get("intended_status") or "").lower()
     public_ip = instance.get("public_ipaddr") or None
 
-    # Resolve the external port mapped to internal 8080
+    # Resolve the external port mapped to internal 10100 (our API server port)
     ports = instance.get("ports") or {}
-    port_mappings = ports.get("8080/tcp") or []
+    port_mappings = ports.get("10100/tcp") or []
     external_port = None
     for m in port_mappings:
         if m.get("HostIp") == "0.0.0.0":
