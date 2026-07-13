@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import secrets
@@ -44,6 +45,7 @@ reset_col = db["password_reset_tokens"]
 config_col = db["app_config"]
 studio_col = db["studio_config"]
 studio_gens_col = db["studio_generations"]
+studio_videos_col = db["studio_videos"]  # durable video bytes (base64), keyed by gen id
 
 
 # ---------------------------------------------------------------------------
@@ -558,7 +560,7 @@ async def list_generations(
             "model": "studio",
             "model_name": "Wan 2.1 I2V-14B",
             "image_base64": "",
-            "thumbnail_base64": "",
+            "thumbnail_base64": doc.get("image_base64", ""),
             "settings": doc.get("settings", {}),
             "status": doc.get("status", "processing"),
             "progress": doc.get("progress", 0),
@@ -594,7 +596,7 @@ async def get_generation(gen_id: str, user=Depends(get_current_user)):
             "model": "studio",
             "model_name": "Wan 2.1 I2V-14B",
             "image_base64": "",
-            "thumbnail_base64": "",
+            "thumbnail_base64": sdoc.get("image_base64", ""),
             "settings": sdoc.get("settings", {}),
             "status": sdoc.get("status", "processing"),
             "progress": sdoc.get("progress", 0),
@@ -837,12 +839,28 @@ async def list_studio_generations(user=Depends(get_current_user)):
 
 @api.get("/studio/generations/{gen_id}/video")
 async def stream_studio_video(gen_id: str):
-    """Proxy a studio video from the GPU over HTTPS.
+    """Serve a studio video over HTTPS.
 
+    Prefers the durable copy stored in Mongo (survives GPU restarts / instance
+    destruction). Falls back to a live proxy from the GPU if no stored copy exists.
     Unauthenticated on purpose: the native video player / downloader can't attach
-    the auth header, and gen_id is an unguessable UUID. The app cannot reach the
-    GPU's cleartext http:// endpoint directly, so we fetch and re-serve it here.
+    the auth header, and gen_id is an unguessable UUID.
     """
+    # 1. Durable copy first
+    stored = await studio_videos_col.find_one({"_id": gen_id})
+    if stored and stored.get("data"):
+        content = base64.b64decode(stored["data"])
+        return Response(
+            content=content,
+            media_type="video/mp4",
+            headers={
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=86400",
+                "Content-Disposition": f'inline; filename="{gen_id}.mp4"',
+            },
+        )
+
+    # 2. Fall back to live proxy from the GPU
     doc = await studio_gens_col.find_one({"id": gen_id})
     if not doc:
         raise HTTPException(status_code=404, detail="Generation not found")
@@ -888,6 +906,7 @@ async def delete_studio_generation(gen_id: str, user=Depends(get_current_user)):
     result = await studio_gens_col.delete_one({"id": gen_id, "user_id": user["id"]})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Studio generation not found")
+    await studio_videos_col.delete_one({"_id": gen_id})
     return {"ok": True}
 
 
@@ -927,6 +946,20 @@ async def _run_studio_generation(gen_id: str):
         }})
 
         if status_val == "completed":
+            # Pull the finished video off the GPU and store it durably in Mongo, so it
+            # survives GPU restarts / instance destruction. Falls back to live proxy if
+            # the download fails for any reason.
+            base = f"http://{public_ip}" if ":" in str(public_ip) else f"http://{public_ip}:{port}"
+            gpu_url = f"{base}/result/{job_id}"
+            try:
+                content = await asyncio.to_thread(lambda: requests.get(gpu_url, timeout=120).content)
+                b64 = base64.b64encode(content).decode()
+                await studio_videos_col.update_one(
+                    {"_id": gen_id}, {"$set": {"data": b64}}, upsert=True
+                )
+                logger.info("Stored %d bytes of video for %s", len(content), gen_id)
+            except Exception as exc:
+                logger.warning("Could not persist video for %s: %s", gen_id, exc)
             video_url = _make_video_url(gen_id)
             await studio_gens_col.update_one({"id": gen_id}, {"$set": {"video_url": video_url, "status": "completed", "progress": 100.0, "stage": "Completed", "updated_at": now_iso()}})
             return
