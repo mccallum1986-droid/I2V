@@ -726,12 +726,18 @@ async def studio_generate(body: StudioGenerationCreate, user=Depends(get_current
     if state != "ready" or not public_ip:
         raise HTTPException(status_code=503, detail=f"GPU is not ready yet (state: {state}). Start it and wait for it to boot.")
 
+    from fal_integration import _PROMPT_PREFIX, _NEGATIVE_BASE
+    user_prompt = body.prompt.strip()
+    user_neg = body.negative_prompt.strip()
+    enhanced_prompt = f"{_PROMPT_PREFIX}{user_prompt}".strip()
+    full_negative = f"{_NEGATIVE_BASE}, {user_neg}" if user_neg else _NEGATIVE_BASE
+
     gen_id = str(uuid.uuid4())
     doc = {
         "id": gen_id,
         "user_id": user["id"],
-        "prompt": body.prompt.strip(),
-        "negative_prompt": body.negative_prompt.strip(),
+        "prompt": enhanced_prompt,
+        "negative_prompt": full_negative,
         "image_base64": body.image_base64,
         "settings": body.settings,
         "status": "queued",
