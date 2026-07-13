@@ -831,6 +831,33 @@ async def list_studio_generations(user=Depends(get_current_user)):
     return [{k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")} for d in docs]
 
 
+@api.get("/studio/debug")
+async def studio_debug():
+    """TEMPORARY diagnostic. Reports studio-generation counts and any docs that
+    fail JSON serialization (which would 500 the list endpoints). Remove after use."""
+    from fastapi.encoders import jsonable_encoder
+    total = await studio_gens_col.count_documents({})
+    by_status: Dict[str, int] = {}
+    bad: list = []
+    field_types: Dict[str, str] = {}
+    docs = await studio_gens_col.find({}).sort("created_at", -1).to_list(500)
+    for d in docs:
+        st = d.get("status", "?")
+        by_status[st] = by_status.get(st, 0) + 1
+        payload = {k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")}
+        try:
+            jsonable_encoder(payload)
+        except Exception as exc:
+            bad.append({"id": d.get("id"), "status": st, "error": str(exc)[:200],
+                        "types": {k: type(v).__name__ for k, v in payload.items()}})
+    # sample the most recent doc's field types to spot schema drift
+    if docs:
+        field_types = {k: type(v).__name__ for k, v in docs[0].items()}
+    return {"total": total, "by_status": by_status, "bad_count": len(bad),
+            "bad": bad[:10], "latest_doc_field_types": field_types,
+            "videos_stored": await studio_videos_col.count_documents({})}
+
+
 @api.get("/studio/generations/{gen_id}/video")
 async def stream_studio_video(gen_id: str):
     """Serve a studio video over HTTPS.
