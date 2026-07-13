@@ -89,7 +89,7 @@ function GpuBadge({ state, gpuName, dph }: { state: GpuState; gpuName?: string; 
 // ---------------------------------------------------------------------------
 // Recent generation card
 // ---------------------------------------------------------------------------
-const AVG_GENERATION_SECS = 240; // ~4 minutes for CogVideoX 50 steps
+const AVG_GENERATION_SECS = 720; // ~12 minutes for Wan 2.1 I2V-14B (30 steps, CPU offload)
 
 function StudioGenCard({ gen, onDelete }: { gen: any; onDelete: (id: string) => void }) {
   const { colors } = useTheme();
@@ -268,7 +268,7 @@ export default function Studio() {
       {/* Header */}
       <View style={{ paddingTop: insets.top + spacing.sm, paddingHorizontal: spacing.lg, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.divider }}>
         <DisplayText style={{ fontSize: 24 }}>Studio</DisplayText>
-        <Text style={{ color: colors.onSurfaceTertiary, fontSize: 13, marginTop: 2 }}>Self-hosted · No restrictions</Text>
+        <Text style={{ color: colors.onSurfaceTertiary, fontSize: 13, marginTop: 2 }}>Wan 2.1 I2V-14B · Self-hosted · No restrictions</Text>
       </View>
 
       <KeyboardAwareScrollView bottomOffset={90} contentContainerStyle={{ padding: spacing.lg, paddingBottom: 130, gap: spacing.xl }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
