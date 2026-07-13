@@ -198,14 +198,16 @@ export default function GenerationDetail() {
         )}
 
         {/* Result actions */}
-        {isDone && (
-          <View style={{ flexDirection: "row", marginTop: spacing.xl, gap: spacing.sm }}>
-            <ActionButton testID="download-button" icon="download-outline" label="Save" onPress={download} />
-            <ActionButton testID="share-button" icon="share-social-outline" label="Share" onPress={share} />
-            <ActionButton testID="duplicate-button" icon="copy-outline" label="Duplicate" onPress={onDuplicate} />
-            <ActionButton testID="delete-button" icon="trash-outline" label="Delete" color={colors.error} onPress={onDelete} />
-          </View>
-        )}
+        <View style={{ flexDirection: "row", marginTop: spacing.xl, gap: spacing.sm }}>
+          {isDone && gen.video_url && (
+            <>
+              <ActionButton testID="download-button" icon="download-outline" label="Save" onPress={download} />
+              <ActionButton testID="share-button" icon="share-social-outline" label="Share" onPress={share} />
+              <ActionButton testID="duplicate-button" icon="copy-outline" label="Duplicate" onPress={onDuplicate} />
+            </>
+          )}
+          <ActionButton testID="delete-button" icon="trash-outline" label="Delete" color={colors.error} onPress={onDelete} />
+        </View>
 
         {busy && <ActivityIndicator color={colors.brandPrimary} style={{ marginTop: spacing.md }} />}
 

@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useGenerations, useModels, useToggleGenerationFav } from "@/src/api/hooks";
+import { useDeleteGeneration, useGenerations, useModels, useToggleGenerationFav } from "@/src/api/hooks";
 import { VideoThumb } from "@/src/components/cards";
 import { Chip, DisplayText, EmptyState, Segmented, TextField } from "@/src/components/ui";
 import { spacing, useTheme } from "@/src/theme";
@@ -25,6 +25,7 @@ export default function Gallery() {
     model: filter !== "all" && filter !== "fav" ? filter : "",
   });
   const toggleFav = useToggleGenerationFav();
+  const del = useDeleteGeneration();
 
   const list = query.data ?? [];
 
@@ -60,7 +61,7 @@ export default function Gallery() {
           <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
             {list.map((g) => (
               <View key={g.id} style={{ width: "48.5%", marginBottom: spacing.md }}>
-                <VideoThumb gen={g} height={190} onPress={() => router.push(`/generation/${g.id}`)} onToggleFav={() => toggleFav.mutate(g.id)} />
+                <VideoThumb gen={g} height={190} onPress={() => router.push(`/generation/${g.id}`)} onLongPress={() => del.mutate(g.id)} onToggleFav={() => toggleFav.mutate(g.id)} />
               </View>
             ))}
           </View>

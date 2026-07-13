@@ -25,12 +25,14 @@ export function timeAgo(iso?: string): string {
 export function VideoThumb({
   gen,
   onPress,
+  onLongPress,
   onToggleFav,
   width,
   height = 200,
 }: {
   gen: Generation;
   onPress: () => void;
+  onLongPress?: () => void;
   onToggleFav?: () => void;
   width?: number;
   height?: number;
@@ -40,6 +42,8 @@ export function VideoThumb({
     <Pressable
       testID={`video-card-${gen.id}`}
       onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={600}
       style={{
         width,
         height,
