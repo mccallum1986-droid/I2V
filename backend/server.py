@@ -722,6 +722,10 @@ async def update_studio_config(body: StudioConfigUpdate, user=Depends(get_curren
 
 @api.get("/studio/account")
 async def studio_account(user=Depends(get_current_user)):
+    # TEMP diagnostic: log which account the app is authenticated as and how
+    # many studio generations it owns. Remove once resolved.
+    _mine = await studio_gens_col.count_documents({"user_id": user["id"]})
+    logger.info("[whoami] logged_in_user_id=%s owns_studio_gens=%s", user["id"], _mine)
     cfg = await _get_studio_config()
     if not cfg["configured"]:
         raise HTTPException(status_code=400, detail="Studio not configured.")
