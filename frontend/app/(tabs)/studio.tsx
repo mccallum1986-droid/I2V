@@ -89,13 +89,28 @@ function GpuBadge({ state, gpuName, dph }: { state: GpuState; gpuName?: string; 
 // ---------------------------------------------------------------------------
 // Recent generation card
 // ---------------------------------------------------------------------------
+const AVG_GENERATION_SECS = 240; // ~4 minutes for CogVideoX 50 steps
+
 function StudioGenCard({ gen, onDelete }: { gen: any; onDelete: (id: string) => void }) {
   const { colors } = useTheme();
-  const router = useRouter();
   const isActive = gen.status === "queued" || gen.status === "processing";
+
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!isActive) return;
+    const start = Date.now();
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(t);
+  }, [isActive]);
+
+  const remaining = Math.max(0, AVG_GENERATION_SECS - elapsed);
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  const countdown = remaining > 0 ? `~${mins}m ${secs.toString().padStart(2, "0")}s remaining` : "Almost done…";
+
   return (
     <Pressable
-      onPress={() => gen.video_url && router.push(`/generation/${gen.id}`)}
+      onPress={() => gen.video_url && Linking.openURL(gen.video_url)}
       onLongPress={() => onDelete(gen.id)}
       delayLongPress={600}
       style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border }}
@@ -112,7 +127,7 @@ function StudioGenCard({ gen, onDelete }: { gen: any; onDelete: (id: string) => 
       <View style={{ flex: 1 }}>
         <Text numberOfLines={1} style={{ color: colors.onSurface, fontWeight: "600", fontSize: 14 }}>{gen.prompt}</Text>
         <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 2 }}>
-          {isActive ? `${gen.stage} · ${Math.round(gen.progress)}%` : gen.status}
+          {isActive ? countdown : gen.status === "completed" ? "Tap to watch" : gen.status}
         </Text>
       </View>
       {gen.status === "completed" && <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceTertiary} />}
