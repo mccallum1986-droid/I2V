@@ -805,11 +805,8 @@ async def _run_studio_generation(gen_id: str):
         }})
 
         if status_val == "completed":
-            try:
-                result = await asyncio.to_thread(studio_gpu.fetch_result, public_ip, job_id, port)
-                await studio_gens_col.update_one({"id": gen_id}, {"$set": {"video_url": result.get("video_url"), "status": "completed", "progress": 100.0, "stage": "Completed", "updated_at": now_iso()}})
-            except Exception as exc:
-                await studio_gens_col.update_one({"id": gen_id}, {"$set": {"status": "failed", "error": str(exc), "updated_at": now_iso()}})
+            video_url = f"http://{public_ip}:{port}/result/{job_id}"
+            await studio_gens_col.update_one({"id": gen_id}, {"$set": {"video_url": video_url, "status": "completed", "progress": 100.0, "stage": "Completed", "updated_at": now_iso()}})
             return
         if status_val == "failed":
             await studio_gens_col.update_one({"id": gen_id}, {"$set": {"error": st.get("error", "Generation failed"), "updated_at": now_iso()}})
