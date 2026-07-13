@@ -865,40 +865,32 @@ async def studio_debug():
     registered_ids = [u.get("id") for u in await users_col.find({}, {"id": 1, "_id": 0}).to_list(50)]
     orphaned = {uid: c for uid, c in owner_counts.items() if uid not in registered_ids}
 
-    # Reproduce the exact endpoints the app calls, for the top owner, and report
-    # response size + any serialization error. This is what actually reaches the app.
-    import json as _json
-    from fastapi.encoders import jsonable_encoder
-    top_owner = max(owner_counts, key=owner_counts.get) if owner_counts else None
-    sim: Dict[str, Any] = {"owner": top_owner}
-    if top_owner:
-        # /studio/generations (raw docs minus a few keys)
+    # GPU config + live state (diagnoses the "GPU won't start" problem). The key
+    # is never exposed — only its last 4 chars and whether it's set.
+    cfg = await _get_studio_config()
+    key = cfg.get("vastai_api_key", "")
+    gpu: Dict[str, Any] = {
+        "configured": cfg["configured"],
+        "instance_id": cfg.get("instance_id", ""),
+        "gpu_port": cfg.get("gpu_port"),
+        "key_tail": (f"...{key[-4:]}" if len(key) > 4 else ("set" if key else "MISSING")),
+    }
+    if cfg["configured"]:
         try:
-            sdocs = await studio_gens_col.find({"user_id": top_owner}).sort("created_at", -1).to_list(100)
-            payload = [{k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")} for d in sdocs]
-            body = _json.dumps(jsonable_encoder(payload))
-            sim["studio_generations"] = {"count": len(payload), "bytes": len(body), "ok": True}
+            instance = await asyncio.to_thread(
+                studio_gpu.get_instance_status, cfg["vastai_api_key"], cfg["instance_id"]
+            )
+            state, public_ip = studio_gpu.parse_gpu_state(instance)
+            gpu["live_state"] = state
+            gpu["public_ip"] = public_ip
+            gpu["actual_status"] = instance.get("actual_status")
+            gpu["intended_status"] = instance.get("intended_status")
+            gpu["ports_10100"] = instance.get("ports", {}).get("10100/tcp")
         except Exception as exc:
-            sim["studio_generations"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
-        # /generations merge (studio docs carry FULL image as thumbnail_base64)
-        try:
-            rdocs = await generations_col.find({"user_id": top_owner}).to_list(500)
-            results = [public_generation(d) for d in rdocs]
-            for d in sdocs:
-                results.append({
-                    "id": d["id"], "prompt": d.get("prompt", ""), "model": "studio",
-                    "model_name": "Wan 2.1 I2V-14B", "image_base64": "",
-                    "thumbnail_base64": d.get("image_base64", ""),
-                    "status": d.get("status", "processing"), "video_url": d.get("video_url"),
-                })
-            body = _json.dumps(jsonable_encoder(results))
-            sim["generations"] = {"count": len(results), "bytes": len(body),
-                                   "mb": round(len(body) / 1e6, 2), "ok": True}
-        except Exception as exc:
-            sim["generations"] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            gpu["error"] = f"{type(exc).__name__}: {exc}"[:300]
 
     return {
-        "_sim": sim,
+        "gpu": gpu,
         "studio_total": studio_total,
         "regular_total": regular_total,
         "studio_by_status": by_status,
