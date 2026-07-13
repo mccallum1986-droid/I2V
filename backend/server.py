@@ -835,27 +835,30 @@ async def list_studio_generations(user=Depends(get_current_user)):
 async def studio_debug():
     """TEMPORARY diagnostic. Reports studio-generation counts and any docs that
     fail JSON serialization (which would 500 the list endpoints). Remove after use."""
-    from fastapi.encoders import jsonable_encoder
-    total = await studio_gens_col.count_documents({})
+    # Lightweight: project OUT the heavy image_base64 field so we don't blow
+    # memory the way the real list endpoints do.
+    proj = {"image_base64": 0}
+    studio_total = await studio_gens_col.count_documents({})
+    regular_total = await generations_col.count_documents({})
     by_status: Dict[str, int] = {}
-    bad: list = []
-    field_types: Dict[str, str] = {}
-    docs = await studio_gens_col.find({}).sort("created_at", -1).to_list(500)
-    for d in docs:
+    metas = await studio_gens_col.find({}, proj).sort("created_at", -1).to_list(1000)
+    for d in metas:
         st = d.get("status", "?")
         by_status[st] = by_status.get(st, 0) + 1
-        payload = {k: v for k, v in d.items() if k not in ("_id", "image_base64", "public_ip", "gpu_port")}
-        try:
-            jsonable_encoder(payload)
-        except Exception as exc:
-            bad.append({"id": d.get("id"), "status": st, "error": str(exc)[:200],
-                        "types": {k: type(v).__name__ for k, v in payload.items()}})
-    # sample the most recent doc's field types to spot schema drift
-    if docs:
-        field_types = {k: type(v).__name__ for k, v in docs[0].items()}
-    return {"total": total, "by_status": by_status, "bad_count": len(bad),
-            "bad": bad[:10], "latest_doc_field_types": field_types,
-            "videos_stored": await studio_videos_col.count_documents({})}
+    # Aggregate the total bytes of image_base64 across studio docs (this is what
+    # the list endpoints pull into memory on every call).
+    pipeline = [{"$project": {"len": {"$strLenBytes": {"$ifNull": ["$image_base64", ""]}}}},
+                {"$group": {"_id": None, "total_bytes": {"$sum": "$len"}, "max_bytes": {"$max": "$len"}}}]
+    agg = await studio_gens_col.aggregate(pipeline).to_list(1)
+    size_info = agg[0] if agg else {}
+    return {
+        "studio_total": studio_total,
+        "regular_total": regular_total,
+        "studio_by_status": by_status,
+        "studio_image_total_mb": round(size_info.get("total_bytes", 0) / 1e6, 1),
+        "studio_image_max_mb": round(size_info.get("max_bytes", 0) / 1e6, 2),
+        "videos_stored": await studio_videos_col.count_documents({}),
+    }
 
 
 @api.get("/studio/generations/{gen_id}/video")
