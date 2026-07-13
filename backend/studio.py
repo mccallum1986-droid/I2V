@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import requests
 
-VASTAI_BASE = "https://console.vast.ai/api/v0"
+VASTAI_BASE = "https://cloud.vast.ai/api/v0"
 INSTANCE_BOOT_POLL_SECS = 5
 INSTANCE_BOOT_TIMEOUT_SECS = 300  # 5 min max wait for GPU to come online
 
@@ -35,7 +35,7 @@ def _vastai_headers(api_key: str) -> Dict[str, str]:
 def get_account_info(api_key: str) -> Dict[str, Any]:
     """Return Vast.ai account balance and credit info."""
     resp = requests.get(
-        f"{VASTAI_BASE}/users/me/",
+        f"{VASTAI_BASE}/users/current/",
         headers=_vastai_headers(api_key),
         timeout=15,
     )
@@ -64,10 +64,11 @@ def get_instance_status(api_key: str, instance_id: str) -> Dict[str, Any]:
     if not resp.ok:
         raise RuntimeError(f"Vast.ai instance lookup failed {resp.status_code}: {resp.text[:300]}")
     data = resp.json()
-    instances = data.get("instances") or []
-    if instances:
-        return instances[0]
-    # Some API versions return the instance directly
+    instance = data.get("instances")
+    if isinstance(instance, dict):
+        return instance
+    if isinstance(instance, list) and instance:
+        return instance[0]
     if "id" in data:
         return data
     raise RuntimeError("Instance not found — check the instance ID in Studio settings.")
@@ -77,18 +78,34 @@ def parse_gpu_state(instance: Dict[str, Any]) -> Tuple[str, Optional[str]]:
     """Return (state, public_ip_or_none).
 
     state is one of: "off" | "starting" | "ready" | "unknown"
+    public_ip includes the mapped external port for port 8080.
     """
     actual_status = (instance.get("actual_status") or "").lower()
     intended_status = (instance.get("intended_status") or "").lower()
     public_ip = instance.get("public_ipaddr") or None
 
+    # Resolve the external port mapped to internal 8080
+    ports = instance.get("ports") or {}
+    port_mappings = ports.get("8080/tcp") or []
+    external_port = None
+    for m in port_mappings:
+        if m.get("HostIp") == "0.0.0.0":
+            external_port = m.get("HostPort")
+            break
+
+    # Return ip:port so the rest of the stack can use it directly
+    if public_ip and external_port:
+        public_ip_with_port = f"{public_ip}:{external_port}"
+    else:
+        public_ip_with_port = public_ip
+
     if actual_status == "running" and public_ip:
-        return "ready", public_ip
+        return "ready", public_ip_with_port
     if intended_status == "running" or actual_status in ("loading", "provisioning", "starting"):
         return "starting", None
     if actual_status in ("stopped", "exited", "offline") or intended_status == "stopped":
         return "off", None
-    return "unknown", public_ip
+    return "unknown", public_ip_with_port
 
 
 def start_instance(api_key: str, instance_id: str) -> None:
@@ -117,7 +134,10 @@ def stop_instance(api_key: str, instance_id: str) -> None:
 # Generation proxy
 # ---------------------------------------------------------------------------
 
-def _gpu_url(public_ip: str, port: int = 8080) -> str:
+def _gpu_url(public_ip: str, port: int = 8081) -> str:
+    # public_ip may already contain :port from parse_gpu_state
+    if ":" in public_ip:
+        return f"http://{public_ip}"
     return f"http://{public_ip}:{port}"
 
 
