@@ -570,9 +570,39 @@ async def list_generations(
 @api.get("/generations/{gen_id}")
 async def get_generation(gen_id: str, user=Depends(get_current_user)):
     doc = await generations_col.find_one({"id": gen_id, "user_id": user["id"]})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Generation not found")
-    return public_generation(doc)
+    if doc:
+        return public_generation(doc)
+    # Fall back to studio generations
+    sdoc = await studio_gens_col.find_one({"id": gen_id, "user_id": user["id"]})
+    if sdoc:
+        if sdoc.get("status") == "completed" and not sdoc.get("video_url"):
+            job_id = sdoc.get("job_id") or sdoc.get("id")
+            public_ip = sdoc.get("public_ip")
+            port = sdoc.get("gpu_port", 10100)
+            if public_ip and job_id:
+                video_url = f"http://{public_ip}:{port}/result/{job_id}"
+                await studio_gens_col.update_one({"id": sdoc["id"]}, {"$set": {"video_url": video_url}})
+                sdoc["video_url"] = video_url
+        return {
+            "id": sdoc["id"],
+            "prompt": sdoc.get("prompt", ""),
+            "negative_prompt": sdoc.get("negative_prompt", ""),
+            "model": "studio",
+            "model_name": "Studio (Self-hosted)",
+            "image_base64": "",
+            "thumbnail_base64": "",
+            "settings": sdoc.get("settings", {}),
+            "status": sdoc.get("status", "processing"),
+            "progress": sdoc.get("progress", 0),
+            "stage": sdoc.get("stage", ""),
+            "video_url": sdoc.get("video_url"),
+            "error": sdoc.get("error"),
+            "is_favourite": False,
+            "est_seconds": 240,
+            "created_at": sdoc.get("created_at", ""),
+            "updated_at": sdoc.get("updated_at", ""),
+        }
+    raise HTTPException(status_code=404, detail="Generation not found")
 
 
 @api.post("/generations/{gen_id}/cancel")

@@ -93,6 +93,7 @@ const AVG_GENERATION_SECS = 240; // ~4 minutes for CogVideoX 50 steps
 
 function StudioGenCard({ gen, onDelete }: { gen: any; onDelete: (id: string) => void }) {
   const { colors } = useTheme();
+  const router = useRouter();
   const isActive = gen.status === "queued" || gen.status === "processing";
 
   const [elapsed, setElapsed] = useState(0);
@@ -110,7 +111,7 @@ function StudioGenCard({ gen, onDelete }: { gen: any; onDelete: (id: string) => 
 
   return (
     <Pressable
-      onPress={() => gen.video_url && Linking.openURL(gen.video_url)}
+      onPress={() => gen.status === "completed" && router.push(`/generation/${gen.id}`)}
       onLongPress={() => onDelete(gen.id)}
       delayLongPress={600}
       style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border }}
