@@ -41,6 +41,7 @@ db = client[os.environ["DB_NAME"]]
 users_col = db["users"]
 prompts_col = db["prompts"]
 generations_col = db["generations"]
+gen_videos_col = db["generation_videos"]  # durable cloud-gen video bytes (base64), keyed by gen id
 reset_col = db["password_reset_tokens"]
 config_col = db["app_config"]
 studio_col = db["studio_config"]
@@ -483,17 +484,38 @@ async def _run_generation(gen_id: str):
                 logger.exception("generation result fetch failed for %s", gen_id)
                 await _fail_generation(gen_id, _friendly_error(exc))
                 return
-            await generations_col.update_one(
-                {"id": gen_id},
-                {"$set": {
-                    "status": "completed",
-                    "progress": 100.0,
-                    "stage": "Completed",
-                    "video_url": result["video_url"],
-                    "completed_at": now_iso(),
-                    "updated_at": now_iso(),
-                }},
-            )
+            final_url = result["video_url"]
+            update: Dict[str, Any] = {
+                "status": "completed",
+                "progress": 100.0,
+                "stage": "Completed",
+                "completed_at": now_iso(),
+                "updated_at": now_iso(),
+            }
+            if live:
+                # A2E serves the clip from a temporary CDN that the mobile player
+                # and downloader don't handle well (especially longer clips). Pull
+                # the bytes here and serve them from our own HTTPS URL instead —
+                # reliable playback/download, and it survives A2E's ~3-day links.
+                # Keep the source URL as a live fallback for the proxy route.
+                update["source_video_url"] = final_url
+                try:
+                    content = await asyncio.to_thread(
+                        lambda: requests.get(final_url, timeout=180).content
+                    )
+                    if content:
+                        await gen_videos_col.update_one(
+                            {"_id": gen_id},
+                            {"$set": {"data": base64.b64encode(content).decode()}},
+                            upsert=True,
+                        )
+                        if RENDER_BASE_URL:
+                            final_url = f"{RENDER_BASE_URL}/api/generations/{gen_id}/video"
+                        logger.info("Stored %d bytes of cloud video for %s", len(content), gen_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Could not persist cloud video for %s: %s", gen_id, exc)
+            update["video_url"] = final_url
+            await generations_col.update_one({"id": gen_id}, {"$set": update})
             return
         await generations_col.update_one(
             {"id": gen_id},
@@ -701,7 +723,44 @@ async def delete_generation(gen_id: str, user=Depends(get_current_user)):
         # Not a regular generation — try the studio collection (merged into gallery)
         await studio_gens_col.delete_one({"id": gen_id, "user_id": user["id"]})
         await studio_videos_col.delete_one({"_id": gen_id})
+    else:
+        await gen_videos_col.delete_one({"_id": gen_id})
     return {"ok": True}
+
+
+@api.get("/generations/{gen_id}/video")
+async def stream_generation_video(gen_id: str):
+    """Serve a cloud-generated video over our HTTPS.
+
+    Prefers the durable copy stored in Mongo; falls back to proxying the source
+    (A2E) URL live if we still have it. Unauthenticated on purpose: the native
+    player / downloader can't attach the auth header, and gen_id is an
+    unguessable UUID.
+    """
+    stored = await gen_videos_col.find_one({"_id": gen_id})
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "public, max-age=86400",
+        "Content-Disposition": f'inline; filename="{gen_id}.mp4"',
+    }
+    if stored and stored.get("data"):
+        return Response(content=base64.b64decode(stored["data"]), media_type="video/mp4", headers=headers)
+
+    doc = await generations_col.find_one({"id": gen_id})
+    src = doc.get("source_video_url") if doc else None
+    if not src:
+        raise HTTPException(status_code=404, detail="Video not available")
+
+    def _fetch() -> bytes:
+        r = requests.get(src, timeout=120)
+        r.raise_for_status()
+        return r.content
+
+    try:
+        content = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch video: {exc}")
+    return Response(content=content, media_type="video/mp4", headers=headers)
 
 
 @api.get("/generations/{gen_id}/source-image")
