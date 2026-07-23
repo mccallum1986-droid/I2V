@@ -15,9 +15,10 @@ A2E fetches the source image from a public URL (it does not accept base64), so
 the caller passes an https URL we serve from our own backend — see
 `GET /api/generations/{id}/source-image` in server.py.
 
-A2E's model outputs a fixed 5-second 720p clip and is optimised for faces, so
-the start endpoint takes only the image + prompt/negative prompt (no duration,
-resolution, seed, etc.) — hence the provider exposes no extra settings.
+A2E's model outputs a 720p clip optimised for faces. The start endpoint takes
+the image + prompt/negative prompt plus a small set of options; we use
+`video_time` for clip length (5/10/15/20s) and default `model_type=GENERAL`.
+(FLF2V — first-and-last-frame — and `lora` presets exist but aren't wired up.)
 
 Response shapes (verified against the live API):
     start  -> {"code": 0, "data": {"_id": "<job id>", ...}}
@@ -41,6 +42,20 @@ RESULT_TIMEOUT = 30
 # How far back to look for our job in the user's result list (newest first).
 _LIST_PAGE_SIZE = 20
 _LIST_MAX_PAGES = 3
+
+# A2E accepts a fixed set of clip lengths (seconds) via `video_time`.
+_VIDEO_TIMES = (5, 10, 15, 20)
+
+
+def _video_time(settings: Dict[str, Any]) -> int:
+    """Map the app's `duration` setting onto an A2E-supported clip length."""
+    try:
+        want = int(settings.get("duration", 5) or 5)
+    except (TypeError, ValueError):
+        want = 5
+    if want in _VIDEO_TIMES:
+        return want
+    return min(_VIDEO_TIMES, key=lambda v: abs(v - want))  # snap to nearest
 
 # Prepended to every user prompt to push toward clean, high quality output.
 # (Shared with the self-hosted Studio path, so kept engine-neutral.)
@@ -91,6 +106,10 @@ def submit(
         "image_url": image_url,
         "prompt": enhanced,
         "negative_prompt": full_negative,
+        "model_type": "GENERAL",       # standard image-to-video (vs FLF2V)
+        "video_time": _video_time(settings),  # 5 / 10 / 15 / 20 seconds
+        "extend_prompt": True,         # let A2E auto-enrich the prompt
+        "skip_face_enhance": False,    # keep A2E's face-similarity pass on
     }
     resp = requests.post(
         f"{BASE}/userImage2Video/start",

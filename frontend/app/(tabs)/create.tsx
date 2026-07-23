@@ -36,7 +36,7 @@ const RES = ["480p", "720p", "1080p"];
 const ASPECT = ["16:9", "9:16", "1:1"];
 const CAMERA = ["static", "pan", "zoom", "orbit"];
 const FPS = ["24", "30"];
-const DURATION = [3, 5, 8, 10];
+const DURATION = [5, 10, 15, 20];
 
 function Label({ children }: { children: string }) {
   const { colors } = useTheme();

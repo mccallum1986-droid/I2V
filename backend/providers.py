@@ -130,8 +130,9 @@ class A2EProvider(_MockProvider):
     gen_seconds = 18  # mock timing; live jobs are driven by A2E's own progress.
     badge = "Cloud"
     live_capable = True
-    # A2E's API only consumes the image + prompts, so no extra knobs are shown.
-    supported_settings: List[str] = []
+    # A2E takes the image + prompts and a clip length; `duration` maps to its
+    # `video_time` (5/10/15/20s). Other knobs (resolution/fps/etc.) don't apply.
+    supported_settings: List[str] = ["duration"]
 
 
 _REGISTRY: Dict[str, ImageToVideoProvider] = {
