@@ -62,10 +62,11 @@ filter/favourites), Settings (theme/default model/notifications/account).
   `a2e_integration.py`: `userImage2Video` (A2E Faces — start verified live,
   poll `video/awsList`) and `userWan25` (Wan models — `model=wan2.x-i2v`,
   `task_type=first_frame`; poll `userWan25/allRecords`). Result items carry
-  `status`/`process`/`result`. Per-model controls: duration, resolution, seed,
-  audio, enhance-prompt. Wan 2.7/2.6 need a VIP A2E plan.
-  NOTE: the Wan (`userWan25`) request/response shapes come from A2E's docs but
-  aren't yet exercised end to end — verify with one live VIP run.
+  per family. Per-model controls: duration, resolution (720p/1080p), seed,
+  audio, enhance-prompt. Wan 2.7/2.6 need a VIP A2E plan. Both families verified
+  live (submit->poll->result): Face uses status/result under `data.data`; Wan
+  uses current_status/result_url under `data.rows`. Wan resolution 480p is
+  rejected by some models, so 720p is the default.
 - P1: Real email delivery for password reset (currently returns demo code).
 - P2: Real push notifications (needs deploy + Firebase build).
 - P2: Supabase/object storage for media instead of base64 thumbnails.

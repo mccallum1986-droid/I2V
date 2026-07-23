@@ -145,7 +145,22 @@ class A2EFaceProvider(_A2EBase):
     duration_options = [5, 10, 15, 20]
 
 
-class Wan27Provider(_A2EBase):
+class _WanBase(_A2EBase):
+    """Shared config for the Wan family (userWan25 endpoint).
+
+    All Wan models run standard image-to-video (`task_type=first_frame`) and
+    share the same controls; subclasses set the model id, labels and duration set.
+    """
+    a2e_family = "wan25"
+    a2e_task_type = "first_frame"  # standard image-to-video mode
+    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
+    # 720p is confirmed for every Wan model (480p is rejected by e.g. flash);
+    # 720p is the default. A2E surfaces a clear error if a model rejects 1080p.
+    resolution_options = ["720p", "1080p"]
+    supports_audio = True
+
+
+class Wan27Provider(_WanBase):
     model_id = "wan-2.7"
     name = "Wan 2.7"
     description = "The newest Wan model. Cinematic motion, sharp detail, and superb prompt adherence."
@@ -154,17 +169,12 @@ class Wan27Provider(_A2EBase):
     use_case = "Hero shots and premium, cinematic image-to-video."
     gen_seconds = 30
     badge = "Newest"
-    a2e_family = "wan25"
     a2e_model = "wan2.7-i2v"
-    a2e_task_type = "first_frame"  # standard image-to-video mode
     requires_vip = True
-    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
     duration_options = [5, 10, 15]
-    resolution_options = ["480p", "720p", "1080p"]
-    supports_audio = True
 
 
-class Wan26Provider(_A2EBase):
+class Wan26Provider(_WanBase):
     model_id = "wan-2.6"
     name = "Wan 2.6"
     description = "High-quality Wan generation with strong motion and detail."
@@ -173,16 +183,12 @@ class Wan26Provider(_A2EBase):
     use_case = "Polished clips when you want top quality."
     gen_seconds = 22
     badge = "Pro"
-    a2e_family = "wan25"
     a2e_model = "wan2.6-i2v"
     requires_vip = True
-    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
     duration_options = [5, 10, 15]
-    resolution_options = ["480p", "720p", "1080p"]
-    supports_audio = True
 
 
-class Wan26FlashProvider(_A2EBase):
+class Wan26FlashProvider(_WanBase):
     model_id = "wan-2.6-flash"
     name = "Wan 2.6 Flash"
     description = "Fast Wan model available on any plan. Great quality with a quick turnaround."
@@ -191,15 +197,11 @@ class Wan26FlashProvider(_A2EBase):
     use_case = "Everyday creation and rapid iteration."
     gen_seconds = 12
     badge = "Free"
-    a2e_family = "wan25"
     a2e_model = "wan2.6-i2v-flash"
-    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
     duration_options = [5, 10, 15]
-    resolution_options = ["480p", "720p", "1080p"]
-    supports_audio = True
 
 
-class Wan25Provider(_A2EBase):
+class Wan25Provider(_WanBase):
     model_id = "wan-2.5"
     name = "Wan 2.5"
     description = "The Wan 2.5 preview model. Reliable image-to-video at 5 or 10 seconds."
@@ -208,12 +210,8 @@ class Wan25Provider(_A2EBase):
     use_case = "Solid general-purpose image-to-video."
     gen_seconds = 15
     badge = "Preview"
-    a2e_family = "wan25"
     a2e_model = "wan2.5-i2v-preview"
-    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
     duration_options = [5, 10]
-    resolution_options = ["480p", "720p", "1080p"]
-    supports_audio = True
 
 
 _REGISTRY: Dict[str, ImageToVideoProvider] = {

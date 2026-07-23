@@ -21,9 +21,10 @@ A2E fetches the source image from a public URL (it does not accept base64), so
 the caller passes an https URL we serve ourselves — see
 `GET /api/generations/{id}/source-image` in server.py.
 
-Verified against the live API: the userImage2Video/start + video/awsList shapes.
-The Wan endpoints are documented but not yet exercised end to end, so the result
-parsing (`_extract_status` / `_extract_url`) stays lenient about key names.
+Both families are verified against the live API (submit -> poll -> result). The
+result shapes differ by family, so `_extract_status` / `_extract_url` / `_as_list`
+accept both key sets: Face uses status/result under `data.data`; Wan uses
+current_status/result_url under `data.rows`.
 """
 from __future__ import annotations
 
@@ -75,11 +76,15 @@ _NEGATIVE_BASE = (
 )
 
 # Field names A2E uses for a job's state / output URL inside a result item.
-# `status` + `result` are the live-verified names; the extras are defensive.
-_STATUS_KEYS = ("status", "state", "video_status", "process_status")
-_URL_KEYS = ("result", "video_url", "videoUrl", "url", "output", "video", "result_url")
+# The two families differ (all live-verified):
+#   Face (awsList): status `status`="success", url `result`,      list `data.data`
+#   Wan  (allRecords): status `current_status`="completed", url `result_url`, list `data.rows`
+_STATUS_KEYS = ("current_status", "status", "state", "video_status", "process_status")
+_URL_KEYS = ("result", "result_url", "video_url", "videoUrl", "url", "output", "video")
 _DONE_WORDS = {"success", "succeeded", "completed", "complete", "done", "finished"}
 _FAILED_WORDS = {"failed", "fail", "error", "cancelled", "canceled", "timeout"}
+# Keys that hold a job's list of items inside the `data` envelope, per family.
+_LIST_KEYS = ("rows", "data", "list", "items", "records", "results")
 
 
 def _headers(key: str) -> Dict[str, str]:
@@ -236,7 +241,7 @@ def _as_list(body: Any) -> List[Dict[str, Any]]:
     if isinstance(body, list):
         return [x for x in body if isinstance(x, dict)]
     if isinstance(body, dict):
-        for k in ("list", "items", "data", "records", "results"):
+        for k in _LIST_KEYS:
             v = body.get(k)
             if isinstance(v, list):
                 return [x for x in v if isinstance(x, dict)]
@@ -289,7 +294,8 @@ def poll(key: str, family: str, job_id: str) -> Dict[str, Any]:
     if state == "completed":
         return {"status": "completed", "progress": 100.0, "stage": "Completed"}
     if state == "failed":
-        msg = item.get("msg") or item.get("message") or item.get("error") or "A2E generation failed."
+        msg = (item.get("failed_message") or item.get("msg") or item.get("message")
+               or item.get("error") or "A2E generation failed.")
         return {"status": "failed", "progress": 0.0, "stage": "Failed", "error": str(msg)}
     try:
         pct = float(item.get("process", 0) or 0)
