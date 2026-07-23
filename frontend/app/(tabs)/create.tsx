@@ -87,6 +87,9 @@ export default function Create() {
   const [modelId, setModelId] = useState<string>("");
   const [showPrompts, setShowPrompts] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
+  // Measured height of the sticky Generate footer, so the keyboard-aware scroll
+  // lifts a focused input clear of it instead of letting it cover the text.
+  const [footerH, setFooterH] = useState(0);
 
   const defaults = user?.settings?.generation ?? {};
   const [settings, setSettings] = useState<Record<string, any>>({
@@ -228,7 +231,7 @@ export default function Create() {
       </View>
 
       <KeyboardAwareScrollView
-        bottomOffset={90}
+        bottomOffset={footerH ? footerH + spacing.md : 90}
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -387,7 +390,7 @@ export default function Create() {
 
       {/* Sticky Generate CTA */}
       <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View style={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider }}>
+        <View onLayout={(e) => setFooterH(e.nativeEvent.layout.height)} style={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider }}>
           <Button testID="generate-button" title="Generate Video" icon="sparkles" onPress={onGenerate} loading={createGen.isPending} />
         </View>
       </KeyboardStickyView>
