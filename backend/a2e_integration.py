@@ -15,11 +15,17 @@ A2E fetches the source image from a public URL (it does not accept base64), so
 the caller passes an https URL we serve from our own backend — see
 `GET /api/generations/{id}/source-image` in server.py.
 
-NOTE ON RESULT POLLING: the exact field names inside each `awsList` item
-(status value + output video URL key) are inferred from A2E's public docs and
-should be confirmed against a live account — `_extract_status` / `_extract_url`
-below are deliberately lenient (they accept several likely key names) so a small
-naming difference won't break generation.
+A2E's model outputs a fixed 5-second 720p clip and is optimised for faces, so
+the start endpoint takes only the image + prompt/negative prompt (no duration,
+resolution, seed, etc.) — hence the provider exposes no extra settings.
+
+Response shapes (verified against the live API):
+    start  -> {"code": 0, "data": {"_id": "<job id>", ...}}
+    awsList-> {"code": 0, "data": {"current": 1, "total": N, "success": true,
+                 "data": [ {"_id", "status": "success"|..., "process": 0-100,
+                            "result": "<mp4 url>", "msg": ""}, ... ]}}
+`_extract_status` / `_extract_url` stay lenient about key names so a future
+field rename can't silently break generation.
 """
 from __future__ import annotations
 
@@ -51,11 +57,12 @@ _NEGATIVE_BASE = (
     "out of focus, flickering, choppy motion, compression artifacts"
 )
 
-# Field names A2E may use for a job's state / output URL inside an awsList item.
+# Field names A2E uses for a job's state / output URL inside an awsList item.
+# `status` + `result` are the live-verified names; the extras are defensive.
 _STATUS_KEYS = ("status", "state", "video_status", "process_status")
 _URL_KEYS = ("result", "video_url", "videoUrl", "url", "output", "video", "result_url")
-_DONE_WORDS = {"success", "succeeded", "completed", "complete", "done", "finished", "3"}
-_FAILED_WORDS = {"failed", "fail", "error", "cancelled", "canceled", "-1", "4"}
+_DONE_WORDS = {"success", "succeeded", "completed", "complete", "done", "finished"}
+_FAILED_WORDS = {"failed", "fail", "error", "cancelled", "canceled", "timeout"}
 
 
 def _headers(key: str) -> Dict[str, str]:
@@ -192,7 +199,13 @@ def poll(key: str, job_id: str) -> Dict[str, Any]:
     if state == "failed":
         msg = item.get("msg") or item.get("message") or item.get("error") or "A2E generation failed."
         return {"status": "failed", "progress": 0.0, "stage": "Failed", "error": str(msg)}
-    return {"status": "processing", "progress": 60.0, "stage": "Rendering video"}
+    # A2E reports 0-100 in `process`; keep it in a sensible in-progress band.
+    try:
+        pct = float(item.get("process", 0) or 0)
+    except (TypeError, ValueError):
+        pct = 0.0
+    progress = min(95.0, max(15.0, pct))
+    return {"status": "processing", "progress": progress, "stage": "Rendering video"}
 
 
 def fetch_result(key: str, job_id: str) -> Dict[str, Any]:

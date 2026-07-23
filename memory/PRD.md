@@ -55,14 +55,17 @@ filter/favourites), Settings (theme/default model/notifications/account).
   MOCKED until an A2E token is present (Settings screen → stored in Mongo
   `app_config` as `a2e_api_key`, or the `A2E_API_KEY` env var). See
   `backend/a2e_integration.py`. A2E fetches the source image over HTTPS via
-  `GET /api/generations/{id}/source-image`. NOTE: confirm the `awsList` result
-  status/URL field names against a live A2E account (see module docstring).
+  `GET /api/generations/{id}/source-image`. Request/response shapes verified
+  against the live API: `userImage2Video/start` -> `data._id`; poll `video/awsList`
+  items carry `status` ("success"), `process` (0-100), and `result` (mp4 URL).
+  A2E outputs a fixed 5s 720p, face-optimised clip (no extra generation knobs).
 - P1: Real email delivery for password reset (currently returns demo code).
 - P2: Real push notifications (needs deploy + Firebase build).
 - P2: Supabase/object storage for media instead of base64 thumbnails.
 - P2: Pagination for very large galleries; batch queue actions.
 
 ## Next Tasks
-1. Verify A2E `awsList` result fields against a live token; tune polling if needed.
+1. End-to-end test one live A2E generation with a real token (fields verified;
+   just needs a real run to confirm timing/behaviour end to end).
 2. Add email provider for reset flow.
 3. Consider object storage for uploaded images/generated videos.
