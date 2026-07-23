@@ -6,6 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Keyboard,
   Linking,
   Modal,
   Pressable,
@@ -87,9 +88,14 @@ export default function Create() {
   const [modelId, setModelId] = useState<string>("");
   const [showPrompts, setShowPrompts] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
-  // Measured height of the sticky Generate footer, so the keyboard-aware scroll
-  // lifts a focused input clear of it instead of letting it cover the text.
-  const [footerH, setFooterH] = useState(0);
+  // Hide the sticky "Generate" footer while the keyboard is open so it can never
+  // cover the prompt inputs; it reappears when the keyboard is dismissed.
+  const [kbVisible, setKbVisible] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardDidShow", () => setKbVisible(true));
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKbVisible(false));
+    return () => { show.remove(); hide.remove(); };
+  }, []);
 
   const defaults = user?.settings?.generation ?? {};
   const [settings, setSettings] = useState<Record<string, any>>({
@@ -231,7 +237,7 @@ export default function Create() {
       </View>
 
       <KeyboardAwareScrollView
-        bottomOffset={footerH ? footerH + spacing.md : 90}
+        bottomOffset={spacing.xl}
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -389,11 +395,13 @@ export default function Create() {
       </KeyboardAwareScrollView>
 
       {/* Sticky Generate CTA */}
-      <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
-        <View onLayout={(e) => setFooterH(e.nativeEvent.layout.height)} style={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider }}>
-          <Button testID="generate-button" title="Generate Video" icon="sparkles" onPress={onGenerate} loading={createGen.isPending} />
-        </View>
-      </KeyboardStickyView>
+      {!kbVisible && (
+        <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
+          <View style={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider }}>
+            <Button testID="generate-button" title="Generate Video" icon="sparkles" onPress={onGenerate} loading={createGen.isPending} />
+          </View>
+        </KeyboardStickyView>
+      )}
 
       {/* Prompt history modal */}
       <Modal visible={showPrompts} animationType="slide" transparent onRequestClose={() => setShowPrompts(false)}>
