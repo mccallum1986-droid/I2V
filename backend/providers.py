@@ -64,6 +64,15 @@ class ImageToVideoProvider(ABC):
     # True when a real cloud engine backs this provider (A2E) once a token is
     # configured. Left False on the base class -> that model stays mock-only.
     live_capable: bool = False
+    # A2E routing (see a2e_integration): which engine family + model this maps to.
+    a2e_family: str = "image2video"       # "image2video" | "wan25"
+    a2e_model: Optional[str] = None        # Wan model id, e.g. "wan2.7-i2v"
+    a2e_task_type: Optional[str] = None    # Wan 2.7 generation mode (first_frame)
+    # Per-model UI option sets surfaced to the app (empty -> control hidden).
+    duration_options: List[int] = []
+    resolution_options: List[str] = []
+    supports_audio: bool = False
+    requires_vip: bool = False
 
     def metadata(self) -> Dict[str, Any]:
         return {
@@ -76,6 +85,10 @@ class ImageToVideoProvider(ABC):
             "supported_settings": self.supported_settings,
             "badge": self.badge,
             "est_seconds": self.gen_seconds,
+            "duration_options": self.duration_options,
+            "resolution_options": self.resolution_options,
+            "supports_audio": self.supports_audio,
+            "requires_vip": self.requires_vip,
         }
 
     @abstractmethod
@@ -112,34 +125,110 @@ class _MockProvider(ImageToVideoProvider):
         return {"video_url": SAMPLE_VIDEOS[idx]}
 
 
-class A2EProvider(_MockProvider):
-    """A2E (video.a2e.ai) image-to-video — the cloud engine.
+class _A2EBase(_MockProvider):
+    """Shared base for the A2E-backed cloud models (live once a token is set)."""
+    live_capable = True
 
-    A2E's start endpoint takes just the source image + prompt/negative prompt,
-    so this provider deliberately exposes no extra generation settings. It's
-    tuned for human/portrait subjects (a person speaking, natural face motion).
-    Runs MOCKED until an A2E token is configured, then routes live via
-    a2e_integration (see server._run_generation).
-    """
+
+class A2EFaceProvider(_A2EBase):
+    """A2E's own face-optimised model (userImage2Video)."""
     model_id = "a2e"
-    name = "A2E"
-    description = "Cloud engine by A2E. Brings a portrait to life — natural face, eye, and lip motion from a single photo."
+    name = "A2E Faces"
+    description = "A2E's face model — brings a portrait to life with natural face, eye, and lip motion from a single photo."
     speed = "Balanced"
     quality = "High"
     use_case = "Talking portraits and lifelike people from a still image."
-    gen_seconds = 18  # mock timing; live jobs are driven by A2E's own progress.
-    badge = "Cloud"
-    live_capable = True
-    # A2E takes the image + prompts and a clip length; `duration` maps to its
-    # `video_time` (5/10/15/20s). Other knobs (resolution/fps/etc.) don't apply.
-    supported_settings: List[str] = ["duration"]
+    gen_seconds = 18
+    badge = "Faces"
+    a2e_family = "image2video"
+    supported_settings = ["duration", "enhance_prompt"]
+    duration_options = [5, 10, 15, 20]
+
+
+class Wan27Provider(_A2EBase):
+    model_id = "wan-2.7"
+    name = "Wan 2.7"
+    description = "The newest Wan model. Cinematic motion, sharp detail, and superb prompt adherence."
+    speed = "Slow"
+    quality = "Ultra"
+    use_case = "Hero shots and premium, cinematic image-to-video."
+    gen_seconds = 30
+    badge = "Newest"
+    a2e_family = "wan25"
+    a2e_model = "wan2.7-i2v"
+    a2e_task_type = "first_frame"  # standard image-to-video mode
+    requires_vip = True
+    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
+    duration_options = [5, 10, 15]
+    resolution_options = ["480p", "720p", "1080p"]
+    supports_audio = True
+
+
+class Wan26Provider(_A2EBase):
+    model_id = "wan-2.6"
+    name = "Wan 2.6"
+    description = "High-quality Wan generation with strong motion and detail."
+    speed = "Balanced"
+    quality = "Ultra"
+    use_case = "Polished clips when you want top quality."
+    gen_seconds = 22
+    badge = "Pro"
+    a2e_family = "wan25"
+    a2e_model = "wan2.6-i2v"
+    requires_vip = True
+    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
+    duration_options = [5, 10, 15]
+    resolution_options = ["480p", "720p", "1080p"]
+    supports_audio = True
+
+
+class Wan26FlashProvider(_A2EBase):
+    model_id = "wan-2.6-flash"
+    name = "Wan 2.6 Flash"
+    description = "Fast Wan model available on any plan. Great quality with a quick turnaround."
+    speed = "Fast"
+    quality = "High"
+    use_case = "Everyday creation and rapid iteration."
+    gen_seconds = 12
+    badge = "Free"
+    a2e_family = "wan25"
+    a2e_model = "wan2.6-i2v-flash"
+    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
+    duration_options = [5, 10, 15]
+    resolution_options = ["480p", "720p", "1080p"]
+    supports_audio = True
+
+
+class Wan25Provider(_A2EBase):
+    model_id = "wan-2.5"
+    name = "Wan 2.5"
+    description = "The Wan 2.5 preview model. Reliable image-to-video at 5 or 10 seconds."
+    speed = "Balanced"
+    quality = "High"
+    use_case = "Solid general-purpose image-to-video."
+    gen_seconds = 15
+    badge = "Preview"
+    a2e_family = "wan25"
+    a2e_model = "wan2.5-i2v-preview"
+    supported_settings = ["duration", "resolution", "seed", "audio", "enhance_prompt"]
+    duration_options = [5, 10]
+    resolution_options = ["480p", "720p", "1080p"]
+    supports_audio = True
 
 
 _REGISTRY: Dict[str, ImageToVideoProvider] = {
-    p.model_id: p for p in (A2EProvider(),)
+    p.model_id: p
+    for p in (
+        Wan27Provider(),
+        Wan26FlashProvider(),
+        Wan26Provider(),
+        Wan25Provider(),
+        A2EFaceProvider(),
+    )
 }
 
-DEFAULT_MODEL = "a2e"
+# Free on any plan, so a safe default engine.
+DEFAULT_MODEL = "wan-2.6-flash"
 
 
 def list_models() -> List[Dict[str, Any]]:

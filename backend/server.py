@@ -412,6 +412,7 @@ async def _run_generation(gen_id: str):
 
     key, _source = await resolve_a2e_key()
     live = bool(key) and getattr(provider, "live_capable", False)
+    family = getattr(provider, "a2e_family", "image2video")
     if live and not RENDER_BASE_URL:
         await _fail_generation(
             gen_id,
@@ -425,8 +426,10 @@ async def _run_generation(gen_id: str):
         if live:
             image_url = f"{RENDER_BASE_URL}/api/generations/{gen_id}/source-image"
             provider_job_id = await asyncio.to_thread(
-                a2e.submit, key, image_url, gen["prompt"],
-                gen.get("negative_prompt", ""), gen["settings"]
+                a2e.submit, key, family, image_url, gen["prompt"],
+                gen.get("negative_prompt", ""), gen["settings"],
+                model=getattr(provider, "a2e_model", None),
+                task_type=getattr(provider, "a2e_task_type", None),
             )
         else:
             provider_job_id = provider.generate_video(
@@ -457,7 +460,7 @@ async def _run_generation(gen_id: str):
             return
         try:
             if live:
-                st = await asyncio.to_thread(a2e.poll, key, provider_job_id)
+                st = await asyncio.to_thread(a2e.poll, key, family, provider_job_id)
             else:
                 st = provider.check_status(provider_job_id, started_at)
         except Exception as exc:  # noqa: BLE001
@@ -472,7 +475,7 @@ async def _run_generation(gen_id: str):
             try:
                 if live:
                     result = await asyncio.to_thread(
-                        a2e.fetch_result, key, provider_job_id
+                        a2e.fetch_result, key, family, provider_job_id
                     )
                 else:
                     result = provider.get_result(provider_job_id)

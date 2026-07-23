@@ -10,6 +10,7 @@ import {
   Modal,
   Pressable,
   ScrollView,
+  Switch,
   Text,
   View,
 } from "react-native";
@@ -98,6 +99,8 @@ export default function Create() {
     fps: defaults.fps ?? 24,
     guidance_scale: defaults.guidance_scale ?? 7,
     seed: "",
+    audio: defaults.audio ?? false,
+    enhance_prompt: defaults.enhance_prompt ?? true,
   });
 
   // preselect model from home / default
@@ -114,6 +117,22 @@ export default function Create() {
   const supports = (k: string) => selectedModel?.supported_settings.includes(k);
 
   const set = (k: string, v: any) => setSettings((s) => ({ ...s, [k]: v }));
+
+  // Duration/resolution options are per-model (A2E vs the Wan family differ).
+  const durationOpts = selectedModel?.duration_options?.length ? selectedModel.duration_options : DURATION;
+  const resOpts = selectedModel?.resolution_options?.length ? selectedModel.resolution_options : RES;
+
+  // When the model changes, coerce duration/resolution onto that model's valid set.
+  useEffect(() => {
+    if (!selectedModel) return;
+    const dOpts = selectedModel.duration_options?.length ? selectedModel.duration_options : DURATION;
+    if (!dOpts.includes(Number(settings.duration))) set("duration", dOpts[0]);
+    const rOpts = selectedModel.resolution_options ?? [];
+    if (rOpts.length && !rOpts.includes(settings.resolution)) {
+      set("resolution", rOpts.includes("720p") ? "720p" : rOpts[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModel?.model_id]);
 
   const pickImage = async () => {
     const perm = await ImagePicker.getMediaLibraryPermissionsAsync();
@@ -288,16 +307,34 @@ export default function Create() {
             {supports("duration") && (
               <>
                 <Label>Duration</Label>
-                <Segmented options={DURATION.map((d) => ({ label: `${d}s`, value: String(d) }))} value={String(settings.duration)} onChange={(v) => set("duration", Number(v))} />
+                <Segmented options={durationOpts.map((d) => ({ label: `${d}s`, value: String(d) }))} value={String(settings.duration)} onChange={(v) => set("duration", Number(v))} />
                 <View style={{ height: spacing.lg }} />
               </>
             )}
             {supports("resolution") && (
               <>
                 <Label>Resolution</Label>
-                <Segmented options={RES.map((r) => ({ label: r, value: r }))} value={settings.resolution} onChange={(v) => set("resolution", v)} />
+                <Segmented options={resOpts.map((r) => ({ label: r, value: r }))} value={settings.resolution} onChange={(v) => set("resolution", v)} />
                 <View style={{ height: spacing.lg }} />
               </>
+            )}
+            {supports("enhance_prompt") && (
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg }}>
+                <View style={{ flex: 1, paddingRight: spacing.md }}>
+                  <Label>Enhance prompt</Label>
+                  <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, marginTop: -spacing.xs }}>Let A2E automatically enrich your prompt</Text>
+                </View>
+                <Switch testID="enhance-prompt-switch" value={!!settings.enhance_prompt} onValueChange={(v) => set("enhance_prompt", v)} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor="#fff" />
+              </View>
+            )}
+            {selectedModel?.supports_audio && (
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.lg }}>
+                <View style={{ flex: 1, paddingRight: spacing.md }}>
+                  <Label>Generate audio</Label>
+                  <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, marginTop: -spacing.xs }}>Add an AI-generated soundtrack (Wan models)</Text>
+                </View>
+                <Switch testID="audio-switch" value={!!settings.audio} onValueChange={(v) => set("audio", v)} trackColor={{ true: colors.brandPrimary, false: colors.border }} thumbColor="#fff" />
+              </View>
             )}
             {supports("aspect_ratio") && (
               <>

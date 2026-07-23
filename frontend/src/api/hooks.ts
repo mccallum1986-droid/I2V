@@ -13,6 +13,10 @@ export type Model = {
   supported_settings: string[];
   badge: string;
   est_seconds: number;
+  duration_options?: number[];
+  resolution_options?: string[];
+  supports_audio?: boolean;
+  requires_vip?: boolean;
 };
 
 export type GenStatus =

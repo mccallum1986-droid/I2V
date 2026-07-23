@@ -182,6 +182,11 @@ export function ModelCard({
           <View style={{ backgroundColor: colors.brandPrimary, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill }}>
             <Text style={{ color: colors.onBrandPrimary, fontSize: 9, fontWeight: "700" }}>{model.badge}</Text>
           </View>
+          {model.requires_vip && (
+            <View style={{ backgroundColor: colors.warning, paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.pill }}>
+              <Text style={{ color: "#1A1200", fontSize: 9, fontWeight: "800" }}>VIP</Text>
+            </View>
+          )}
         </View>
         {selected ? (
           <Ionicons name="checkmark-circle" size={24} color={colors.brandPrimary} />

@@ -16,11 +16,14 @@ auth, gallery, queue, progress, results, settings, dark/light premium UI.
 
 ## Architecture
 - **Backend** FastAPI + Motor/MongoDB. `providers.py` = `ImageToVideoProvider`
-  ABC + `A2EProvider` (cloud engine, `live_capable`; mock until a token is set),
-  registry + `get_provider` routing. `server.py` = JWT auth, models, prompts,
-  generations (async background lifecycle task). Cloud generation routes to A2E
-  (`a2e_integration.py`); the self-hosted GPU path (Studio, `studio.py`) is
-  separate. All routes under `/api`.
+  ABC + A2E-backed model cards (all `live_capable`; mock until a token is set):
+  A2E Faces (userImage2Video), and the Wan family — Wan 2.7 / 2.6 / 2.6-flash /
+  2.5 (userWan25). Each provider carries its A2E routing (`a2e_family`,
+  `a2e_model`, `a2e_task_type`) and per-model UI options (duration/resolution/
+  audio, VIP flag). `server.py` = JWT auth, models, prompts, generations (async
+  background lifecycle task) — routes live jobs to `a2e_integration.py` by
+  family. The self-hosted GPU path (Studio, `studio.py`) is separate. All routes
+  under `/api`.
 - **Frontend** Expo Router + TypeScript. Zustand (auth/theme/toast), React Query
   (data), Axios (interceptor injects bearer). expo-image, expo-video,
   expo-image-picker/manipulator, @react-native-community/slider,
@@ -51,14 +54,18 @@ filter/favourites), Settings (theme/default model/notifications/account).
 - ✅ Backend tested 24/24 pytest; frontend flows verified.
 
 ## Backlog
-- ✅ DONE: Cloud engine switched from fal.ai to **A2E** (video.a2e.ai). Stays
-  MOCKED until an A2E token is present (Settings screen → stored in Mongo
-  `app_config` as `a2e_api_key`, or the `A2E_API_KEY` env var). See
-  `backend/a2e_integration.py`. A2E fetches the source image over HTTPS via
-  `GET /api/generations/{id}/source-image`. Request/response shapes verified
-  against the live API: `userImage2Video/start` -> `data._id`; poll `video/awsList`
-  items carry `status` ("success"), `process` (0-100), and `result` (mp4 URL).
-  A2E outputs a fixed 5s 720p, face-optimised clip (no extra generation knobs).
+- ✅ DONE: Cloud engine switched from fal.ai to **A2E** (video.a2e.ai), with a
+  multi-model picker: A2E Faces + Wan 2.7/2.6/2.6-flash/2.5. Stays MOCKED until
+  an A2E token is present (Settings → Mongo `app_config.a2e_api_key`, or the
+  `A2E_API_KEY` env var). A2E fetches the source image over HTTPS via
+  `GET /api/generations/{id}/source-image`. Two engine families in
+  `a2e_integration.py`: `userImage2Video` (A2E Faces — start verified live,
+  poll `video/awsList`) and `userWan25` (Wan models — `model=wan2.x-i2v`,
+  `task_type=first_frame`; poll `userWan25/allRecords`). Result items carry
+  `status`/`process`/`result`. Per-model controls: duration, resolution, seed,
+  audio, enhance-prompt. Wan 2.7/2.6 need a VIP A2E plan.
+  NOTE: the Wan (`userWan25`) request/response shapes come from A2E's docs but
+  aren't yet exercised end to end — verify with one live VIP run.
 - P1: Real email delivery for password reset (currently returns demo code).
 - P2: Real push notifications (needs deploy + Firebase build).
 - P2: Supabase/object storage for media instead of base64 thumbnails.
