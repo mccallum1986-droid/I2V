@@ -21,7 +21,7 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
-import fal_integration as fal
+import a2e_integration as a2e
 import providers
 import studio as studio_gpu
 
@@ -51,14 +51,14 @@ studio_videos_col = db["studio_videos"]  # durable video bytes (base64), keyed b
 # ---------------------------------------------------------------------------
 # AI engine (provider) key resolution
 # ---------------------------------------------------------------------------
-# Generations run in MOCKED mode until a fal.ai key is available. The key can
-# come from a value saved in-app (Settings screen -> stored in Mongo) or from
-# the FAL_KEY env var on the host. The saved key takes priority.
-async def resolve_fal_key() -> tuple[Optional[str], Optional[str]]:
+# Generations run in MOCKED mode until an A2E API token is available. The token
+# can come from a value saved in-app (Settings screen -> stored in Mongo) or from
+# the A2E_API_KEY env var on the host. The saved token takes priority.
+async def resolve_a2e_key() -> tuple[Optional[str], Optional[str]]:
     doc = await config_col.find_one({"_id": "provider"})
-    if doc and doc.get("fal_api_key"):
-        return doc["fal_api_key"], "stored"
-    env_key = os.environ.get("FAL_KEY") or os.environ.get("FAL_API_KEY")
+    if doc and doc.get("a2e_api_key"):
+        return doc["a2e_api_key"], "stored"
+    env_key = os.environ.get("A2E_API_KEY") or os.environ.get("A2E_TOKEN")
     if env_key:
         return env_key, "env"
     return None, None
@@ -160,8 +160,8 @@ class ProfileUpdate(BaseModel):
 
 
 class ProviderKeyUpdate(BaseModel):
-    # Empty string clears the saved key (reverts to env var / mock mode).
-    fal_api_key: str = ""
+    # Empty string clears the saved token (reverts to env var / mock mode).
+    a2e_api_key: str = ""
 
 
 class PromptCreate(BaseModel):
@@ -313,8 +313,9 @@ async def get_models():
 
 # --------------------------- Provider settings -----------------------------
 async def _provider_status() -> Dict[str, Any]:
-    key, source = await resolve_fal_key()
+    key, source = await resolve_a2e_key()
     return {
+        "provider": "a2e",
         "mode": "live" if key else "mock",
         "has_key": bool(key),
         "key_source": source,
@@ -329,16 +330,16 @@ async def get_provider_settings(user=Depends(get_current_user)):
 
 @api.put("/settings/provider")
 async def set_provider_settings(body: ProviderKeyUpdate, user=Depends(get_current_user)):
-    val = body.fal_api_key.strip()
+    val = body.a2e_api_key.strip()
     if val:
         await config_col.update_one(
             {"_id": "provider"},
-            {"$set": {"fal_api_key": val, "updated_by": user["id"], "updated_at": now_iso()}},
+            {"$set": {"a2e_api_key": val, "updated_by": user["id"], "updated_at": now_iso()}},
             upsert=True,
         )
     else:
         await config_col.update_one(
-            {"_id": "provider"}, {"$unset": {"fal_api_key": ""}}, upsert=True
+            {"_id": "provider"}, {"$unset": {"a2e_api_key": ""}}, upsert=True
         )
     return await _provider_status()
 
@@ -394,9 +395,12 @@ async def _fail_generation(gen_id: str, error: str) -> None:
 async def _run_generation(gen_id: str):
     """Background task: drive a generation through its provider lifecycle.
 
-    LIVE mode (a fal.ai key is configured and the model has a `fal_model` slug)
-    routes to fal.ai; otherwise it runs MOCKED. Blocking fal HTTP calls are run
+    LIVE mode (an A2E token is configured and the provider is `live_capable`)
+    routes to A2E; otherwise it runs MOCKED. Blocking A2E HTTP calls are run
     off the event loop via asyncio.to_thread.
+
+    A2E fetches the source image over HTTPS rather than accepting base64, so we
+    hand it a public URL served by this backend (see stream_source_image).
     """
     gen = await generations_col.find_one({"id": gen_id})
     if not gen:
@@ -406,15 +410,22 @@ async def _run_generation(gen_id: str):
         await _fail_generation(gen_id, "Unknown model")
         return
 
-    key, _source = await resolve_fal_key()
-    fal_model = getattr(provider, "fal_model", None)
-    live = bool(key) and bool(fal_model)
+    key, _source = await resolve_a2e_key()
+    live = bool(key) and getattr(provider, "live_capable", False)
+    if live and not RENDER_BASE_URL:
+        await _fail_generation(
+            gen_id,
+            "Live generation needs a public backend URL (set RENDER_EXTERNAL_URL "
+            "or PUBLIC_BASE_URL) so A2E can fetch the image.",
+        )
+        return
 
     # --- kick off ---
     try:
         if live:
+            image_url = f"{RENDER_BASE_URL}/api/generations/{gen_id}/source-image"
             provider_job_id = await asyncio.to_thread(
-                fal.submit, fal_model, key, gen["image_base64"], gen["prompt"],
+                a2e.submit, key, image_url, gen["prompt"],
                 gen.get("negative_prompt", ""), gen["settings"]
             )
         else:
@@ -446,7 +457,7 @@ async def _run_generation(gen_id: str):
             return
         try:
             if live:
-                st = await asyncio.to_thread(fal.poll, fal_model, key, provider_job_id)
+                st = await asyncio.to_thread(a2e.poll, key, provider_job_id)
             else:
                 st = provider.check_status(provider_job_id, started_at)
         except Exception as exc:  # noqa: BLE001
@@ -461,7 +472,7 @@ async def _run_generation(gen_id: str):
             try:
                 if live:
                     result = await asyncio.to_thread(
-                        fal.fetch_result, fal_model, key, provider_job_id
+                        a2e.fetch_result, key, provider_job_id
                     )
                 else:
                     result = provider.get_result(provider_job_id)
@@ -690,6 +701,32 @@ async def delete_generation(gen_id: str, user=Depends(get_current_user)):
     return {"ok": True}
 
 
+@api.get("/generations/{gen_id}/source-image")
+async def stream_source_image(gen_id: str):
+    """Serve a generation's source image over HTTPS.
+
+    The A2E cloud engine fetches the source image by URL (it doesn't accept
+    base64), so we expose the stored image here for it to pull. Unauthenticated
+    on purpose: A2E's fetcher can't send our auth header, and gen_id is an
+    unguessable UUID.
+    """
+    doc = await generations_col.find_one({"id": gen_id})
+    if not doc or not doc.get("image_base64"):
+        raise HTTPException(status_code=404, detail="Source image not found")
+    try:
+        content = base64.b64decode(doc["image_base64"])
+    except Exception:
+        raise HTTPException(status_code=500, detail="Stored image is corrupt")
+    return Response(
+        content=content,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'inline; filename="{gen_id}.jpg"',
+        },
+    )
+
+
 # ===========================================================================
 # Studio — self-hosted GPU routes
 # ===========================================================================
@@ -806,7 +843,7 @@ async def studio_generate(body: StudioGenerationCreate, user=Depends(get_current
     # gallery even though it started. The readiness check now happens inside
     # _run_studio_generation so this endpoint returns a "queued" job instantly.
 
-    from fal_integration import _PROMPT_PREFIX, _NEGATIVE_BASE
+    from a2e_integration import _PROMPT_PREFIX, _NEGATIVE_BASE
     user_prompt = body.prompt.strip()
     user_neg = body.negative_prompt.strip()
     enhanced_prompt = f"{_PROMPT_PREFIX}{user_prompt}".strip()

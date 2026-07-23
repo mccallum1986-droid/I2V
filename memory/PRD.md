@@ -11,14 +11,16 @@ auth, gallery, queue, progress, results, settings, dark/light premium UI.
 - Auth: JWT email/password only.
 - Theme: Dark + Light (system default) with toggle.
 - Notifications: in-app progress + completion toasts.
-- Video engine: no fal.ai key → generation runs in **MOCKED mode** (full provider
+- Video engine: no A2E token → generation runs in **MOCKED mode** (full provider
   interface built; simulated queued→processing→completed returning sample MP4s).
 
 ## Architecture
 - **Backend** FastAPI + Motor/MongoDB. `providers.py` = `ImageToVideoProvider`
-  ABC + `Wan27Provider`/`Wan26Provider`/`Wan26R2VProvider` (mock), registry +
-  `get_provider` routing. `server.py` = JWT auth, models, prompts, generations
-  (async background lifecycle task). All routes under `/api`.
+  ABC + `A2EProvider` (cloud engine, `live_capable`; mock until a token is set),
+  registry + `get_provider` routing. `server.py` = JWT auth, models, prompts,
+  generations (async background lifecycle task). Cloud generation routes to A2E
+  (`a2e_integration.py`); the self-hosted GPU path (Studio, `studio.py`) is
+  separate. All routes under `/api`.
 - **Frontend** Expo Router + TypeScript. Zustand (auth/theme/toast), React Query
   (data), Axios (interceptor injects bearer). expo-image, expo-video,
   expo-image-picker/manipulator, @react-native-community/slider,
@@ -49,16 +51,18 @@ filter/favourites), Settings (theme/default model/notifications/account).
 - ✅ Backend tested 24/24 pytest; frontend flows verified.
 
 ## Backlog
-- ✅ DONE: Real fal.ai integration wired. Stays MOCKED until a fal.ai key is
-  present (Settings screen → stored in Mongo `app_config`, or `FAL_KEY` env var).
-  See `backend/fal_integration.py`; provider→fal slugs on each provider
-  (`fal_model`). Confirm slugs on fal.ai if renamed.
+- ✅ DONE: Cloud engine switched from fal.ai to **A2E** (video.a2e.ai). Stays
+  MOCKED until an A2E token is present (Settings screen → stored in Mongo
+  `app_config` as `a2e_api_key`, or the `A2E_API_KEY` env var). See
+  `backend/a2e_integration.py`. A2E fetches the source image over HTTPS via
+  `GET /api/generations/{id}/source-image`. NOTE: confirm the `awsList` result
+  status/URL field names against a live A2E account (see module docstring).
 - P1: Real email delivery for password reset (currently returns demo code).
 - P2: Real push notifications (needs deploy + Firebase build).
 - P2: Supabase/object storage for media instead of base64 thumbnails.
 - P2: Pagination for very large galleries; batch queue actions.
 
 ## Next Tasks
-1. Wire fal.ai (or chosen provider) when key is supplied.
+1. Verify A2E `awsList` result fields against a live token; tune polling if needed.
 2. Add email provider for reset flow.
 3. Consider object storage for uploaded images/generated videos.

@@ -5,12 +5,13 @@ Each supported AI model is implemented behind a common `ImageToVideoProvider`
 interface so new models can be added without touching the API layer or the
 frontend. The API routes requests to the correct provider via `get_provider`.
 
-NOTE: Real image-to-video engines (Wan 2.7 / 2.6 / R2V) require a paid provider
-API key (e.g. fal.ai). No key was supplied, so these providers run in MOCKED
-mode: they simulate the full generation lifecycle (queued -> processing ->
-completed) using time-based progress and return royalty-free sample clips as the
-"generated" video. To go live, implement `generate_video` / `check_status` /
-`get_result` with real API calls -- the rest of the app is already wired.
+NOTE: The cloud engine (A2E, video.a2e.ai) requires an API token. Until one is
+supplied the provider runs in MOCKED mode: it simulates the full generation
+lifecycle (queued -> processing -> completed) using time-based progress and
+returns royalty-free sample clips as the "generated" video. When an A2E token is
+configured (Settings screen or the A2E_API_KEY env var) a `live_capable`
+provider routes to A2E for real generation — see `a2e_integration.py`. The
+self-hosted GPU path (Studio) is separate and unaffected.
 """
 from __future__ import annotations
 
@@ -60,10 +61,9 @@ class ImageToVideoProvider(ABC):
     gen_seconds: int  # simulated generation time (mock)
     supported_settings: List[str]
     badge: str
-    # Real fal.ai model slug used when a fal.ai key is configured (LIVE mode).
-    # Left as None on the base class -> that model stays mock-only.
-    # Confirm/adjust a slug on its fal.ai model page if fal renames it.
-    fal_model: Optional[str] = None
+    # True when a real cloud engine backs this provider (A2E) once a token is
+    # configured. Left False on the base class -> that model stays mock-only.
+    live_capable: bool = False
 
     def metadata(self) -> Dict[str, Any]:
         return {
@@ -112,60 +112,33 @@ class _MockProvider(ImageToVideoProvider):
         return {"video_url": SAMPLE_VIDEOS[idx]}
 
 
-class Wan27Provider(_MockProvider):
-    model_id = "wan-2.7"
-    name = "Wan 2.7"
-    description = "Our most advanced model. Cinematic motion, sharp detail, and superb prompt adherence."
-    speed = "Slow"
-    quality = "Ultra"
-    use_case = "Hero shots, cinematic reels, and premium client deliverables."
-    gen_seconds = 22
-    badge = "Newest"
-    fal_model = "fal-ai/wan/v2.2-a14b/image-to-video"
-    supported_settings = [
-        "duration", "resolution", "aspect_ratio", "motion_strength",
-        "camera_movement", "creativity", "seed", "fps", "guidance_scale",
-    ]
+class A2EProvider(_MockProvider):
+    """A2E (video.a2e.ai) image-to-video — the cloud engine.
 
-
-class Wan26Provider(_MockProvider):
-    model_id = "wan-2.6"
-    name = "Wan 2.6"
-    description = "The balanced workhorse. Great quality with a faster turnaround for everyday creation."
+    A2E's start endpoint takes just the source image + prompt/negative prompt,
+    so this provider deliberately exposes no extra generation settings. It's
+    tuned for human/portrait subjects (a person speaking, natural face motion).
+    Runs MOCKED until an A2E token is configured, then routes live via
+    a2e_integration (see server._run_generation).
+    """
+    model_id = "a2e"
+    name = "A2E"
+    description = "Cloud engine by A2E. Brings a portrait to life — natural face, eye, and lip motion from a single photo."
     speed = "Balanced"
     quality = "High"
-    use_case = "Social clips, product loops, and rapid iteration."
-    gen_seconds = 15
-    badge = "Popular"
-    fal_model = "fal-ai/wan/v2.2-a14b/image-to-video"
-    supported_settings = [
-        "duration", "resolution", "aspect_ratio", "motion_strength",
-        "camera_movement", "creativity", "seed", "fps",
-    ]
-
-
-class Wan26R2VProvider(_MockProvider):
-    model_id = "wan-2.6-r2v"
-    name = "Wan 2.6 R2V"
-    description = "Reference-to-Video. Preserves your subject's identity with lightning-fast renders."
-    speed = "Fast"
-    quality = "High"
-    use_case = "Portrait animation and identity-consistent motion."
-    gen_seconds = 10
-    badge = "Fastest"
-    fal_model = "fal-ai/wan-i2v"
-    supported_settings = [
-        "duration", "resolution", "aspect_ratio", "motion_strength",
-        "creativity", "seed",
-    ]
+    use_case = "Talking portraits and lifelike people from a still image."
+    gen_seconds = 18  # mock timing; live jobs are driven by A2E's own progress.
+    badge = "Cloud"
+    live_capable = True
+    # A2E's API only consumes the image + prompts, so no extra knobs are shown.
+    supported_settings: List[str] = []
 
 
 _REGISTRY: Dict[str, ImageToVideoProvider] = {
-    p.model_id: p
-    for p in (Wan27Provider(), Wan26Provider(), Wan26R2VProvider())
+    p.model_id: p for p in (A2EProvider(),)
 }
 
-DEFAULT_MODEL = "wan-2.6"
+DEFAULT_MODEL = "a2e"
 
 
 def list_models() -> List[Dict[str, Any]]:

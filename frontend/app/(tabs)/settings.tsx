@@ -40,7 +40,7 @@ export default function Settings() {
   const [editName, setEditName] = useState(false);
   const [name, setName] = useState(user?.name ?? "");
   const [saving, setSaving] = useState(false);
-  const [falKey, setFalKey] = useState("");
+  const [a2eKey, setA2eKey] = useState("");
   const [savingKey, setSavingKey] = useState(false);
 
   const studioCfg = useStudioConfig();
@@ -53,21 +53,21 @@ export default function Settings() {
   const isLive = cfg?.mode === "live";
   const envManaged = cfg?.key_source === "env";
 
-  const saveFalKey = async () => {
-    const value = falKey.trim();
+  const saveA2eKey = async () => {
+    const value = a2eKey.trim();
     if (!value) return;
     setSavingKey(true);
     try {
       await setProviderKey.mutateAsync(value);
-      setFalKey("");
-      toast.success("API key saved — live mode on");
+      setA2eKey("");
+      toast.success("API token saved — live mode on");
     } catch (e) {
-      toast.error(apiError(e, "Couldn't save key"));
+      toast.error(apiError(e, "Couldn't save token"));
     }
     setSavingKey(false);
   };
 
-  const clearFalKey = async () => {
+  const clearA2eKey = async () => {
     setSavingKey(true);
     try {
       await setProviderKey.mutateAsync("");
@@ -169,7 +169,7 @@ export default function Settings() {
             <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
               <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: isLive ? colors.success : colors.warning }} />
               <Text style={{ color: colors.onSurface, fontSize: 15, fontWeight: "700" }}>
-                {isLive ? "Live — fal.ai" : "Mock mode"}
+                {isLive ? "Live — A2E" : "Mock mode"}
               </Text>
               {isLive && cfg?.key_masked && (
                 <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12 }}>{cfg.key_masked}</Text>
@@ -177,39 +177,39 @@ export default function Settings() {
             </View>
             <Text style={{ color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19 }}>
               {isLive
-                ? "Generating real videos via fal.ai. You're billed per clip by fal.ai — lower resolutions cost less."
-                : "Using free sample clips (no charges). Paste a fal.ai API key below to generate real videos."}
+                ? "Generating real videos via A2E (video.a2e.ai). You're billed per clip by A2E — best with a clear photo of a person."
+                : "Using free sample clips (no charges). Paste your A2E API token below to generate real videos."}
             </Text>
 
             {envManaged ? (
               <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12 }}>
-                Key is set on the server (FAL_KEY). Manage it in your host&apos;s environment variables.
+                Token is set on the server (A2E_API_KEY). Manage it in your host&apos;s environment variables.
               </Text>
             ) : (
               <>
                 <TextField
-                  testID="fal-key-input"
-                  value={falKey}
-                  onChangeText={setFalKey}
-                  placeholder="fal.ai API key"
+                  testID="a2e-key-input"
+                  value={a2eKey}
+                  onChangeText={setA2eKey}
+                  placeholder="A2E API token"
                   icon="key-outline"
                   secureTextEntry
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
                 <Button
-                  testID="save-fal-key-button"
-                  title={isLive ? "Update key" : "Save key & go live"}
-                  onPress={saveFalKey}
+                  testID="save-a2e-key-button"
+                  title={isLive ? "Update token" : "Save token & go live"}
+                  onPress={saveA2eKey}
                   loading={savingKey}
-                  disabled={!falKey.trim()}
+                  disabled={!a2eKey.trim()}
                 />
                 {isLive && (
                   <Button
-                    testID="clear-fal-key-button"
+                    testID="clear-a2e-key-button"
                     title="Revert to mock mode"
                     variant="secondary"
-                    onPress={clearFalKey}
+                    onPress={clearA2eKey}
                     loading={savingKey}
                   />
                 )}
@@ -282,7 +282,7 @@ export default function Settings() {
         </View>
 
         <Button testID="sign-out-button" title="Sign Out" variant="danger" icon="log-out-outline" onPress={signOut} />
-        <Text style={{ color: colors.onSurfaceTertiary, fontSize: 11, textAlign: "center" }}>WanStudio · {isLive ? "Live generation (fal.ai)" : "Mock generation mode"}</Text>
+        <Text style={{ color: colors.onSurfaceTertiary, fontSize: 11, textAlign: "center" }}>WanStudio · {isLive ? "Live generation (A2E)" : "Mock generation mode"}</Text>
       </ScrollView>
 
       {/* Edit name modal */}

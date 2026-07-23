@@ -68,6 +68,7 @@ export function useModels() {
 
 // ------------------------------------------------------- provider (AI engine)
 export type ProviderConfig = {
+  provider?: string;
   mode: "live" | "mock";
   has_key: boolean;
   key_source: "stored" | "env" | null;
@@ -86,8 +87,8 @@ export function useProviderConfig() {
 export function useSetProviderKey() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (fal_api_key: string) =>
-      (await api.put<ProviderConfig>("/settings/provider", { fal_api_key })).data,
+    mutationFn: async (a2e_api_key: string) =>
+      (await api.put<ProviderConfig>("/settings/provider", { a2e_api_key })).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["provider-config"] }),
   });
 }
