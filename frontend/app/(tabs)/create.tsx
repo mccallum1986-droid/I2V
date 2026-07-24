@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   Model,
+  useA2eBalance,
   useCreateGeneration,
   useDeletePrompt,
   useModels,
@@ -130,6 +131,12 @@ export default function Create() {
   // Duration/resolution options are per-model (A2E vs the Wan family differ).
   const durationOpts = selectedModel?.duration_options?.length ? selectedModel.duration_options : DURATION;
   const resOpts = selectedModel?.resolution_options?.length ? selectedModel.resolution_options : RES;
+
+  // Estimated A2E cost = per-second rate × duration; compared against live balance.
+  const balance = useA2eBalance();
+  const estCost = (selectedModel?.credit_rate ?? 0) * Number(settings.duration || 0);
+  const fmtCredits = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const insufficient = balance.data?.coins != null && estCost > 0 && balance.data.coins < estCost;
 
   // When the model changes, coerce duration/resolution onto that model's valid set.
   useEffect(() => {
@@ -398,6 +405,19 @@ export default function Create() {
       {!kbVisible && (
         <KeyboardStickyView offset={{ closed: 0, opened: 0 }}>
           <View style={{ padding: spacing.lg, paddingBottom: insets.bottom + spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.divider }}>
+            {estCost > 0 && (
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.sm }}>
+                <Text style={{ color: colors.onSurfaceSecondary, fontSize: 13 }}>
+                  Est. cost{" "}
+                  <Text style={{ color: insufficient ? colors.error : colors.brandPrimary, fontWeight: "700" }}>~{fmtCredits(estCost)} credits</Text>
+                </Text>
+                {balance.data?.coins != null && (
+                  <Text style={{ color: insufficient ? colors.error : colors.onSurfaceTertiary, fontSize: 12 }}>
+                    Balance: {fmtCredits(balance.data.coins)}
+                  </Text>
+                )}
+              </View>
+            )}
             <Button testID="generate-button" title="Generate Video" icon="sparkles" onPress={onGenerate} loading={createGen.isPending} />
           </View>
         </KeyboardStickyView>

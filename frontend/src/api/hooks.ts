@@ -17,6 +17,7 @@ export type Model = {
   resolution_options?: string[];
   supports_audio?: boolean;
   requires_vip?: boolean;
+  credit_rate?: number; // A2E credits per second at 720p
 };
 
 export type GenStatus =

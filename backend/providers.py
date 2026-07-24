@@ -73,6 +73,7 @@ class ImageToVideoProvider(ABC):
     resolution_options: List[str] = []
     supports_audio: bool = False
     requires_vip: bool = False
+    credit_rate: int = 0  # A2E credits per second at 720p (0 -> unknown/mock)
 
     def metadata(self) -> Dict[str, Any]:
         return {
@@ -89,6 +90,7 @@ class ImageToVideoProvider(ABC):
             "resolution_options": self.resolution_options,
             "supports_audio": self.supports_audio,
             "requires_vip": self.requires_vip,
+            "credit_rate": self.credit_rate,
         }
 
     @abstractmethod
@@ -143,6 +145,7 @@ class A2EFaceProvider(_A2EBase):
     a2e_family = "image2video"
     supported_settings = ["duration", "enhance_prompt"]
     duration_options = [5, 10, 15, 20]
+    credit_rate = 6
 
 
 class _WanBase(_A2EBase):
@@ -172,6 +175,7 @@ class Wan27Provider(_WanBase):
     a2e_model = "wan2.7-i2v"
     requires_vip = True
     duration_options = [5, 10, 15]
+    credit_rate = 24
 
 
 class Wan26Provider(_WanBase):
@@ -186,6 +190,7 @@ class Wan26Provider(_WanBase):
     a2e_model = "wan2.6-i2v"
     requires_vip = True
     duration_options = [5, 10, 15]
+    credit_rate = 15
 
 
 class Wan26FlashProvider(_WanBase):
@@ -199,6 +204,7 @@ class Wan26FlashProvider(_WanBase):
     badge = "Free"
     a2e_model = "wan2.6-i2v-flash"
     duration_options = [5, 10, 15]
+    credit_rate = 6
 
 
 class Wan25Provider(_WanBase):
@@ -212,6 +218,7 @@ class Wan25Provider(_WanBase):
     badge = "Preview"
     a2e_model = "wan2.5-i2v-preview"
     duration_options = [5, 10]
+    credit_rate = 15
 
 
 _REGISTRY: Dict[str, ImageToVideoProvider] = {
