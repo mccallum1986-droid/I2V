@@ -19,6 +19,7 @@ export type Model = {
   requires_vip?: boolean;
   credit_rate?: number; // A2E credits per second at 720p
   credit_costs?: Record<string, number>; // exact per-duration cost (wins over rate)
+  modes?: string[]; // generation modes (task_types); >1 -> show a mode picker
 };
 
 export type GenStatus =
@@ -168,6 +169,8 @@ export function useCreateGeneration() {
       model: string;
       image_base64: string;
       settings: Record<string, any>;
+      task_type?: string;
+      source_video_url?: string;
     }) => (await api.post<Generation>("/generations", payload)).data,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["generations"] });

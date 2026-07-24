@@ -23,6 +23,7 @@ import {
   useA2eBalance,
   useCreateGeneration,
   useDeletePrompt,
+  useGenerations,
   useModels,
   usePrompts,
   useSavePrompt,
@@ -36,6 +37,7 @@ import { toast } from "@/src/store/toast";
 import { radius, spacing, useTheme } from "@/src/theme";
 
 const RES = ["480p", "720p", "1080p"];
+const MODE_LABELS: Record<string, string> = { first_frame: "Image → Video", video_extend: "Extend a video" };
 const ASPECT = ["16:9", "9:16", "1:1"];
 const CAMERA = ["static", "pan", "zoom", "orbit"];
 const FPS = ["24", "30"];
@@ -84,6 +86,8 @@ export default function Create() {
   const deletePrompt = useDeletePrompt();
 
   const [imageB64, setImageB64] = useState<string | null>(null);
+  const [mode, setMode] = useState<string>("first_frame");
+  const [sourceVideo, setSourceVideo] = useState<{ id: string; url: string; prompt: string } | null>(null);
   const [prompt, setPrompt] = useState("");
   const [negative, setNegative] = useState("");
   const [modelId, setModelId] = useState<string>("");
@@ -126,6 +130,12 @@ export default function Create() {
   );
   const supports = (k: string) => selectedModel?.supported_settings.includes(k);
 
+  // Generation modes (Wan 2.7 offers Image→Video + Extend a video).
+  const modes = selectedModel?.modes ?? [];
+  const isExtend = mode === "video_extend";
+  const galleryGens = useGenerations({}, false, isExtend);
+  const sourceVideos = (galleryGens.data ?? []).filter((g) => g.status === "completed" && g.video_url);
+
   const set = (k: string, v: any) => setSettings((s) => ({ ...s, [k]: v }));
 
   // Duration/resolution options are per-model (A2E vs the Wan family differ).
@@ -148,6 +158,8 @@ export default function Create() {
     if (rOpts.length && !rOpts.includes(settings.resolution)) {
       set("resolution", rOpts.includes("720p") ? "720p" : rOpts[0]);
     }
+    // Reset the mode when switching to a model that doesn't offer the current one.
+    if (!(selectedModel.modes ?? []).includes(mode)) { setMode("first_frame"); setSourceVideo(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedModel?.model_id]);
 
@@ -209,9 +221,13 @@ export default function Create() {
   };
 
   const onGenerate = async () => {
-    if (!imageB64) return toast.error("Please add an image first");
     if (!prompt.trim()) return toast.error("Please enter a prompt");
     if (!selectedModel) return toast.error("Select a model");
+    if (isExtend) {
+      if (!sourceVideo) return toast.error("Pick a video to extend");
+    } else if (!imageB64) {
+      return toast.error("Please add an image first");
+    }
 
     const filtered: Record<string, any> = {};
     selectedModel.supported_settings.forEach((k) => {
@@ -227,8 +243,9 @@ export default function Create() {
         prompt: prompt.trim(),
         negative_prompt: negative.trim(),
         model: modelId,
-        image_base64: imageB64,
+        image_base64: isExtend ? "" : imageB64!,
         settings: filtered,
+        ...(isExtend ? { task_type: "video_extend", source_video_url: sourceVideo!.url } : {}),
       });
       savePrompt.mutate({ text: prompt.trim(), negative_prompt: negative.trim(), is_favourite: false });
       toast.success("Generation queued!");
@@ -250,26 +267,62 @@ export default function Create() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Image zone */}
-        <Label>Source image</Label>
-        {imageB64 ? (
-          <View style={{ borderRadius: radius.lg, overflow: "hidden", marginBottom: spacing.md }}>
-            <Image source={{ uri: `data:image/jpeg;base64,${imageB64}` }} style={{ width: "100%", height: 240 }} contentFit="cover" />
-            <Pressable testID="remove-image-button" onPress={() => setImageB64(null)} style={{ position: "absolute", top: spacing.sm, right: spacing.sm, width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center" }}>
-              <Ionicons name="close" size={20} color="#fff" />
-            </Pressable>
-          </View>
+        {/* Mode (Wan 2.7: Image→Video or Extend a video) */}
+        {modes.length > 1 && (
+          <>
+            <Label>Mode</Label>
+            <Segmented options={modes.map((m) => ({ label: MODE_LABELS[m] ?? m, value: m }))} value={mode} onChange={setMode} />
+            <View style={{ height: spacing.md }} />
+          </>
+        )}
+
+        {isExtend ? (
+          /* Source video picker — extend one of your finished clips */
+          <>
+            <Label>Video to extend</Label>
+            {sourceVideos.length === 0 ? (
+              <View style={{ padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.borderStrong, backgroundColor: colors.surfaceSecondary, marginBottom: spacing.md }}>
+                <Text style={{ color: colors.onSurfaceTertiary, fontSize: 13, textAlign: "center" }}>No finished videos yet. Generate one first, then come back here to extend it.</Text>
+              </View>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingBottom: spacing.md }}>
+                {sourceVideos.map((g) => {
+                  const sel = sourceVideo?.id === g.id;
+                  return (
+                    <Pressable key={g.id} testID={`source-video-${g.id}`} onPress={() => setSourceVideo({ id: g.id, url: g.video_url as string, prompt: g.prompt })} style={{ width: 150, padding: spacing.md, borderRadius: radius.lg, backgroundColor: colors.surfaceSecondary, borderWidth: sel ? 2 : 1, borderColor: sel ? colors.brandPrimary : colors.border, gap: 6 }}>
+                      <Ionicons name={sel ? "checkmark-circle" : "film-outline"} size={22} color={colors.brandPrimary} />
+                      <Text numberOfLines={2} style={{ color: colors.onSurface, fontSize: 12, fontWeight: "600" }}>{g.prompt}</Text>
+                      <Text style={{ color: colors.onSurfaceTertiary, fontSize: 10 }}>{g.model_name}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </>
         ) : (
-          <View style={{ flexDirection: "row", gap: spacing.md, marginBottom: spacing.md }}>
-            <Pressable testID="upload-image-button" onPress={pickImage} style={{ flex: 1, height: 130, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.surfaceSecondary }}>
-              <Ionicons name="image-outline" size={28} color={colors.brandPrimary} />
-              <Text style={{ color: colors.onSurface, fontWeight: "600", fontSize: 13 }}>Upload</Text>
-            </Pressable>
-            <Pressable testID="take-photo-button" onPress={takePhoto} style={{ flex: 1, height: 130, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.surfaceSecondary }}>
-              <Ionicons name="camera-outline" size={28} color={colors.brandPrimary} />
-              <Text style={{ color: colors.onSurface, fontWeight: "600", fontSize: 13 }}>Camera</Text>
-            </Pressable>
-          </View>
+          /* Image zone */
+          <>
+            <Label>Source image</Label>
+            {imageB64 ? (
+              <View style={{ borderRadius: radius.lg, overflow: "hidden", marginBottom: spacing.md }}>
+                <Image source={{ uri: `data:image/jpeg;base64,${imageB64}` }} style={{ width: "100%", height: 240 }} contentFit="cover" />
+                <Pressable testID="remove-image-button" onPress={() => setImageB64(null)} style={{ position: "absolute", top: spacing.sm, right: spacing.sm, width: 34, height: 34, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.55)", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="close" size={20} color="#fff" />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", gap: spacing.md, marginBottom: spacing.md }}>
+                <Pressable testID="upload-image-button" onPress={pickImage} style={{ flex: 1, height: 130, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.surfaceSecondary }}>
+                  <Ionicons name="image-outline" size={28} color={colors.brandPrimary} />
+                  <Text style={{ color: colors.onSurface, fontWeight: "600", fontSize: 13 }}>Upload</Text>
+                </Pressable>
+                <Pressable testID="take-photo-button" onPress={takePhoto} style={{ flex: 1, height: 130, borderRadius: radius.lg, borderWidth: 1.5, borderStyle: "dashed", borderColor: colors.borderStrong, alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.surfaceSecondary }}>
+                  <Ionicons name="camera-outline" size={28} color={colors.brandPrimary} />
+                  <Text style={{ color: colors.onSurface, fontWeight: "600", fontSize: 13 }}>Camera</Text>
+                </Pressable>
+              </View>
+            )}
+          </>
         )}
 
         {/* Prompt */}

@@ -175,8 +175,10 @@ class GenerationCreate(BaseModel):
     prompt: str = Field(min_length=1)
     negative_prompt: str = ""
     model: str
-    image_base64: str = Field(min_length=1)
+    image_base64: str = ""  # required for image modes; empty for video_extend
     settings: Dict[str, Any] = Field(default_factory=dict)
+    task_type: Optional[str] = None       # e.g. "video_extend" (Wan 2.7)
+    source_video_url: Optional[str] = None  # public clip URL for video_extend
 
 
 # ---------------------------------------------------------------------------
@@ -436,14 +438,24 @@ async def _run_generation(gen_id: str):
         return
 
     # --- kick off ---
+    task_type = gen.get("task_type") or getattr(provider, "a2e_task_type", None)
     try:
-        if live:
+        if live and task_type == "video_extend":
+            # Extend an existing clip: A2E fetches the source video by URL; no image.
+            provider_job_id = await asyncio.to_thread(
+                a2e.submit, key, family, "", gen["prompt"],
+                gen.get("negative_prompt", ""), gen["settings"],
+                model=getattr(provider, "a2e_model", None),
+                task_type="video_extend",
+                first_clip_url=gen.get("source_video_url"),
+            )
+        elif live:
             image_url = f"{RENDER_BASE_URL}/api/generations/{gen_id}/source-image"
             provider_job_id = await asyncio.to_thread(
                 a2e.submit, key, family, image_url, gen["prompt"],
                 gen.get("negative_prompt", ""), gen["settings"],
                 model=getattr(provider, "a2e_model", None),
-                task_type=getattr(provider, "a2e_task_type", None),
+                task_type=task_type,
             )
         else:
             provider_job_id = provider.generate_video(
@@ -551,6 +563,8 @@ def _new_generation_doc(user_id: str, body: GenerationCreate, provider) -> Dict[
         "model_name": provider.name,
         "image_base64": body.image_base64,
         "thumbnail_base64": body.image_base64,
+        "task_type": body.task_type,
+        "source_video_url": body.source_video_url,
         "settings": filtered,
         "status": "queued",
         "progress": 0.0,
@@ -569,6 +583,11 @@ async def create_generation(body: GenerationCreate, user=Depends(get_current_use
     provider = providers.get_provider(body.model)
     if not provider:
         raise HTTPException(status_code=400, detail="Unsupported model")
+    if body.task_type == "video_extend":
+        if not body.source_video_url:
+            raise HTTPException(status_code=400, detail="Pick a source video to extend.")
+    elif not body.image_base64:
+        raise HTTPException(status_code=400, detail="An image is required.")
     doc = _new_generation_doc(user["id"], body, provider)
     await generations_col.insert_one(doc)
     asyncio.create_task(_run_generation(doc["id"]))

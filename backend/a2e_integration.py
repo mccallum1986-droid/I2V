@@ -187,6 +187,7 @@ def submit(
     *,
     model: Optional[str] = None,
     task_type: Optional[str] = None,
+    first_clip_url: Optional[str] = None,
     name: str = "WanStudio",
 ) -> str:
     """Queue a generation on the given engine family. Returns A2E's job id."""
@@ -217,7 +218,6 @@ def submit(
         allowed = _WAN_DURATIONS.get(model or "", _WAN_DURATION_DEFAULT)
         payload: Dict[str, Any] = {
             "name": name,
-            "image_url": image_url,
             "prompt": enhanced,
             "negative_prompt": full_negative,
             "model": model,
@@ -227,8 +227,14 @@ def submit(
             "multi_shots": False,
             "audio": _bool(settings.get("audio"), False),
         }
-        if task_type:  # only Wan 2.7 uses task_type; others ignore it
-            payload["task_type"] = task_type
+        if task_type == "video_extend" and first_clip_url:
+            # Extend an existing clip — video source instead of an image.
+            payload["task_type"] = "video_extend"
+            payload["first_clip_url"] = first_clip_url
+        else:
+            payload["image_url"] = image_url
+            if task_type:  # only Wan 2.7 uses task_type; others ignore it
+                payload["task_type"] = task_type
         seed = _seed(settings)
         if seed is not None:
             payload["seed"] = seed

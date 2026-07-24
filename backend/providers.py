@@ -73,6 +73,9 @@ class ImageToVideoProvider(ABC):
     resolution_options: List[str] = []
     supports_audio: bool = False
     requires_vip: bool = False
+    # Generation modes (A2E task_types) this model offers. >1 -> app shows a mode
+    # picker. Empty -> single default mode (standard image-to-video).
+    modes: List[str] = []
     credit_rate: int = 0  # A2E credits per second at 720p (0 -> unknown/mock)
     # Exact per-duration cost overrides for non-linear pricing (e.g. Spicy).
     # Keys are seconds; when a duration is present here it wins over credit_rate.
@@ -95,6 +98,7 @@ class ImageToVideoProvider(ABC):
             "requires_vip": self.requires_vip,
             "credit_rate": self.credit_rate,
             "credit_costs": self.credit_costs,
+            "modes": self.modes,
         }
 
     @abstractmethod
@@ -180,6 +184,7 @@ class Wan27Provider(_WanBase):
     requires_vip = True
     duration_options = [5, 10, 15]
     credit_rate = 24
+    modes = ["first_frame", "video_extend"]
 
 
 class Wan26Provider(_WanBase):
