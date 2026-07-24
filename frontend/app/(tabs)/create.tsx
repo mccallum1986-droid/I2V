@@ -75,7 +75,7 @@ export default function Create() {
   const { colors } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ model?: string }>();
+  const params = useLocalSearchParams<{ model?: string; prompt?: string; negative?: string }>();
   const user = useAuthStore((s) => s.user);
 
   const models = useModels();
@@ -123,6 +123,13 @@ export default function Create() {
     const initial = params.model || user?.settings?.default_model || models.data[0]?.model_id;
     if (initial && !modelId) setModelId(initial);
   }, [models.data, params.model, user, modelId]);
+
+  // Prefill the prompt when arriving from a saved favourite ("Use" in Gallery).
+  useEffect(() => {
+    if (typeof params.prompt === "string" && params.prompt) setPrompt(params.prompt);
+    if (typeof params.negative === "string" && params.negative) setNegative(params.negative);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.prompt, params.negative]);
 
   const selectedModel: Model | undefined = useMemo(
     () => models.data?.find((m) => m.model_id === modelId),

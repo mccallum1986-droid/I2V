@@ -1,12 +1,13 @@
+import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { RefreshControl, ScrollView, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useDeleteGeneration, useGenerations, useModels, useToggleGenerationFav } from "@/src/api/hooks";
+import { useDeleteGeneration, useDeletePrompt, useGenerations, useModels, usePrompts, useToggleGenerationFav, useTogglePromptFav } from "@/src/api/hooks";
 import { VideoThumb } from "@/src/components/cards";
 import { Chip, DisplayText, EmptyState, Segmented, TextField } from "@/src/components/ui";
-import { spacing, useTheme } from "@/src/theme";
+import { radius, spacing, useTheme } from "@/src/theme";
 
 export default function Gallery() {
   const { colors } = useTheme();
@@ -27,7 +28,12 @@ export default function Gallery() {
   const toggleFav = useToggleGenerationFav();
   const del = useDeleteGeneration();
 
+  const favPrompts = usePrompts(true).data ?? [];
+  const togglePromptFav = useTogglePromptFav();
+  const deletePrompt = useDeletePrompt();
+
   const list = query.data ?? [];
+  const showFavPrompts = filter === "fav" && favPrompts.length > 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -55,8 +61,33 @@ export default function Gallery() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={query.isRefetching} onRefresh={() => query.refetch()} tintColor={colors.brandPrimary} />}
       >
+        {showFavPrompts && (
+          <View style={{ marginBottom: spacing.xl }}>
+            <DisplayText style={{ fontSize: 18, marginBottom: spacing.xs }}>Favourite prompts</DisplayText>
+            <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, marginBottom: spacing.sm }}>Long-press a prompt to copy it, or tap Use to load it into Create.</Text>
+            {favPrompts.map((p) => (
+              <View key={p.id} style={{ backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.sm }}>
+                <Text selectable style={{ color: colors.onSurface, fontSize: 14, lineHeight: 20 }}>{p.text}</Text>
+                {!!p.negative_prompt && (
+                  <Text selectable style={{ color: colors.onSurfaceTertiary, fontSize: 12, marginTop: 4 }}>Negative: {p.negative_prompt}</Text>
+                )}
+                <View style={{ flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: spacing.lg, marginTop: spacing.sm }}>
+                  <Pressable testID={`use-prompt-${p.id}`} onPress={() => router.push({ pathname: "/(tabs)/create", params: { prompt: p.text, negative: p.negative_prompt } })} style={{ flexDirection: "row", alignItems: "center", gap: 4 }} hitSlop={8}>
+                    <Ionicons name="arrow-forward-circle-outline" size={18} color={colors.brandPrimary} />
+                    <Text style={{ color: colors.brandPrimary, fontWeight: "600", fontSize: 13 }}>Use</Text>
+                  </Pressable>
+                  <Pressable onPress={() => togglePromptFav.mutate(p.id)} hitSlop={8}><Ionicons name="star" size={18} color={colors.warning} /></Pressable>
+                  <Pressable onPress={() => deletePrompt.mutate(p.id)} hitSlop={8}><Ionicons name="trash-outline" size={18} color={colors.error} /></Pressable>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         {list.length === 0 ? (
-          <EmptyState icon="images-outline" title="Nothing here yet" subtitle={search ? "No videos match your search." : "Generate a video and it will show up in your gallery."} />
+          showFavPrompts ? null : (
+            <EmptyState icon="images-outline" title="Nothing here yet" subtitle={search ? "No videos match your search." : "Generate a video and it will show up in your gallery."} />
+          )
         ) : (
           <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
             {list.map((g) => (
