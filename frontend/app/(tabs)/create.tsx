@@ -38,6 +38,7 @@ import { radius, spacing, useTheme } from "@/src/theme";
 
 const RES = ["480p", "720p", "1080p"];
 const MODE_LABELS: Record<string, string> = { first_frame: "Image → Video", video_extend: "Extend a video" };
+const DEFAULT_SUFFIX = "cinematic, high quality, ultra detailed, smooth motion, keep the same face and body shape, follow the prompt exactly";
 const ASPECT = ["16:9", "9:16", "1:1"];
 const CAMERA = ["static", "pan", "zoom", "orbit"];
 const FPS = ["24", "30"];
@@ -136,6 +137,10 @@ export default function Create() {
     [models.data, modelId],
   );
   const supports = (k: string) => selectedModel?.supported_settings.includes(k);
+
+  // Auto-added prompt suffix (editable in Settings). Shown greyed and appended to
+  // the end of the prompt, so the user's own words lead. Empty string = disabled.
+  const suffix = (user?.settings?.prompt_suffix !== undefined ? String(user.settings.prompt_suffix) : DEFAULT_SUFFIX).trim();
 
   // Generation modes (Wan 2.7 offers Image→Video + Extend a video).
   const modes = selectedModel?.modes ?? [];
@@ -245,15 +250,17 @@ export default function Create() {
       }
     });
 
+    const fullPrompt = [prompt.trim(), suffix].filter(Boolean).join(", ");
     try {
       const gen = await createGen.mutateAsync({
-        prompt: prompt.trim(),
+        prompt: fullPrompt,
         negative_prompt: negative.trim(),
         model: modelId,
         image_base64: isExtend ? "" : imageB64!,
         settings: filtered,
         ...(isExtend ? { task_type: "video_extend", source_video_url: sourceVideo!.url } : {}),
       });
+      // Save only the user's own text to their prompt library (not the suffix).
       savePrompt.mutate({ text: prompt.trim(), negative_prompt: negative.trim(), is_favourite: false });
       toast.success("Generation queued!");
       router.push(`/generation/${gen.id}`);
@@ -348,6 +355,12 @@ export default function Create() {
           multiline
           style={{ minHeight: 88, textAlignVertical: "top", paddingVertical: 12 }}
         />
+        {suffix.length > 0 && (
+          <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, lineHeight: 17, marginTop: 6, fontStyle: "italic" }}>
+            <Text style={{ fontWeight: "700" }}>+ auto-added: </Text>{suffix}
+            <Text style={{ color: colors.brandPrimary }} onPress={() => router.push("/(tabs)/settings")}>  Edit</Text>
+          </Text>
+        )}
         <View style={{ height: spacing.md }} />
         <Label>Negative prompt (optional)</Label>
         <TextField

@@ -110,7 +110,9 @@ def get_credits(key: str) -> Dict[str, Any]:
 
 
 def _build_prompt(prompt: str, negative_prompt: str) -> tuple[str, str]:
-    enhanced = f"{_PROMPT_PREFIX}{prompt}".strip()
+    # The app appends a visible, user-editable suffix to the prompt, so we no
+    # longer prepend a hidden quality prefix here — the user's own text leads.
+    enhanced = prompt.strip()
     user_neg = negative_prompt.strip()
     full_negative = f"{_NEGATIVE_BASE}, {user_neg}" if user_neg else _NEGATIVE_BASE
     return enhanced, full_negative

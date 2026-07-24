@@ -10,6 +10,8 @@ import { useAuthStore } from "@/src/store/auth";
 import { toast } from "@/src/store/toast";
 import { radius, spacing, ThemeMode, useTheme } from "@/src/theme";
 
+const DEFAULT_SUFFIX = "cinematic, high quality, ultra detailed, smooth motion, keep the same face and body shape, follow the prompt exactly";
+
 function Row({ icon, title, subtitle, right, onPress, testID }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle?: string; right?: React.ReactNode; onPress?: () => void; testID?: string }) {
   const { colors } = useTheme();
   return (
@@ -43,6 +45,8 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [a2eKey, setA2eKey] = useState("");
   const [savingKey, setSavingKey] = useState(false);
+  const [promptSuffix, setPromptSuffix] = useState<string>(settings.prompt_suffix ?? DEFAULT_SUFFIX);
+  const [savingSuffix, setSavingSuffix] = useState(false);
 
   const studioCfg = useStudioConfig();
   const setStudioConfig = useSetStudioConfig();
@@ -141,6 +145,36 @@ export default function Settings() {
           <Card>
             <Text style={{ color: colors.onSurface, fontSize: 15, fontWeight: "600", marginBottom: spacing.sm }}>Theme</Text>
             <Segmented testID="theme-segmented" options={[{ label: "Light", value: "light" }, { label: "Dark", value: "dark" }, { label: "System", value: "system" }]} value={mode} onChange={onThemeChange} />
+          </Card>
+        </View>
+
+        {/* Prompt add-on */}
+        <View>
+          <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.sm, marginLeft: spacing.xs }}>Prompt add-on</Text>
+          <Card style={{ gap: spacing.md }}>
+            <Text style={{ color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19 }}>
+              Automatically added to the end of every prompt (shown greyed on the Create screen). Great for quality and keeping faces/bodies consistent. Leave it empty to turn it off.
+            </Text>
+            <TextField
+              testID="prompt-suffix-input"
+              value={promptSuffix}
+              onChangeText={setPromptSuffix}
+              placeholder="e.g. keep the same face and body, follow the prompt exactly"
+              multiline
+              style={{ minHeight: 70, textAlignVertical: "top", paddingVertical: 12 }}
+              autoCapitalize="none"
+            />
+            <Button
+              testID="save-prompt-suffix-button"
+              title="Save add-on"
+              onPress={async () => {
+                setSavingSuffix(true);
+                const ok = await patchProfile({ settings: { ...settings, prompt_suffix: promptSuffix.trim() } });
+                setSavingSuffix(false);
+                if (ok) toast.success("Prompt add-on saved");
+              }}
+              loading={savingSuffix}
+            />
           </Card>
         </View>
 

@@ -116,10 +116,16 @@ def _make_video_url(gen_id: str) -> str:
     return f"{RENDER_BASE_URL}/api/studio/generations/{gen_id}/video"
 
 
+DEFAULT_PROMPT_SUFFIX = (
+    "cinematic, high quality, ultra detailed, smooth motion, "
+    "keep the same face and body shape, follow the prompt exactly"
+)
+
 DEFAULT_SETTINGS = {
     "default_model": providers.DEFAULT_MODEL,
     "theme": "system",
     "notifications": True,
+    "prompt_suffix": DEFAULT_PROMPT_SUFFIX,
     "generation": {
         "duration": 5,
         "resolution": "720p",
