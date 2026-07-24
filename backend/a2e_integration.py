@@ -64,7 +64,7 @@ _RESOLUTIONS = {"480p", "720p", "1080p"}
 # Wan Spicy (uncensored) clip lengths per model. 2.2 supports 5/8; 2.7 supports 2-15.
 _SPICY_DURATIONS: Dict[str, tuple] = {
     "wan2.2-i2v-spicy": (5, 8),
-    "wan2.7-i2v-spicy": (5, 10, 15),
+    "wan2.7-i2v-spicy": (5, 8, 10, 15),
 }
 
 # Prepended to every user prompt to push toward clean, high quality output.

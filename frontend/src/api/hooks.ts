@@ -18,6 +18,7 @@ export type Model = {
   supports_audio?: boolean;
   requires_vip?: boolean;
   credit_rate?: number; // A2E credits per second at 720p
+  credit_costs?: Record<string, number>; // exact per-duration cost (wins over rate)
 };
 
 export type GenStatus =

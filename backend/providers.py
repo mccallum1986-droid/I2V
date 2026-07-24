@@ -74,6 +74,9 @@ class ImageToVideoProvider(ABC):
     supports_audio: bool = False
     requires_vip: bool = False
     credit_rate: int = 0  # A2E credits per second at 720p (0 -> unknown/mock)
+    # Exact per-duration cost overrides for non-linear pricing (e.g. Spicy).
+    # Keys are seconds; when a duration is present here it wins over credit_rate.
+    credit_costs: Dict[int, int] = {}
 
     def metadata(self) -> Dict[str, Any]:
         return {
@@ -91,6 +94,7 @@ class ImageToVideoProvider(ABC):
             "supports_audio": self.supports_audio,
             "requires_vip": self.requires_vip,
             "credit_rate": self.credit_rate,
+            "credit_costs": self.credit_costs,
         }
 
     @abstractmethod
@@ -236,6 +240,7 @@ class Wan22SpicyProvider(_A2EBase):
     supported_settings = ["duration", "resolution", "seed", "enhance_prompt"]
     duration_options = [5, 8]
     resolution_options = ["480p", "720p"]
+    credit_costs = {5: 200, 8: 320}
 
 
 class Wan27SpicyProvider(_A2EBase):
@@ -251,8 +256,9 @@ class Wan27SpicyProvider(_A2EBase):
     a2e_family = "wanspicy"
     a2e_model = "wan2.7-i2v-spicy"
     supported_settings = ["duration", "resolution", "seed", "enhance_prompt"]
-    duration_options = [5, 10, 15]
+    duration_options = [5, 8, 10, 15]
     resolution_options = ["720p", "1080p"]
+    credit_costs = {5: 250, 8: 400, 10: 500, 15: 759}
 
 
 _REGISTRY: Dict[str, ImageToVideoProvider] = {

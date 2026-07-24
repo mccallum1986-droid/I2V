@@ -134,7 +134,8 @@ export default function Create() {
 
   // Estimated A2E cost = per-second rate × duration; compared against live balance.
   const balance = useA2eBalance();
-  const estCost = (selectedModel?.credit_rate ?? 0) * Number(settings.duration || 0);
+  const durNum = Number(settings.duration || 0);
+  const estCost = selectedModel?.credit_costs?.[String(durNum)] ?? (selectedModel?.credit_rate ?? 0) * durNum;
   const fmtCredits = (n: number) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   const insufficient = balance.data?.coins != null && estCost > 0 && balance.data.coins < estCost;
 
