@@ -39,6 +39,7 @@ import { radius, spacing, useTheme } from "@/src/theme";
 const RES = ["480p", "720p", "1080p"];
 const MODE_LABELS: Record<string, string> = { first_frame: "Image → Video", video_extend: "Extend a video" };
 const DEFAULT_SUFFIX = "cinematic, high quality, ultra detailed, smooth motion, keep the same face and body shape, follow the prompt exactly";
+const DEFAULT_NEG_SUFFIX = "blurry, low quality, deformed, distorted face, face morphing, changing face, different person, extra limbs, warping, watermark, bad anatomy";
 const ASPECT = ["16:9", "9:16", "1:1"];
 const CAMERA = ["static", "pan", "zoom", "orbit"];
 const FPS = ["24", "30"];
@@ -141,6 +142,7 @@ export default function Create() {
   // Auto-added prompt suffix (editable in Settings). Shown greyed and appended to
   // the end of the prompt, so the user's own words lead. Empty string = disabled.
   const suffix = (user?.settings?.prompt_suffix !== undefined ? String(user.settings.prompt_suffix) : DEFAULT_SUFFIX).trim();
+  const negSuffix = (user?.settings?.negative_suffix !== undefined ? String(user.settings.negative_suffix) : DEFAULT_NEG_SUFFIX).trim();
 
   // Generation modes (Wan 2.7 offers Image→Video + Extend a video).
   const modes = selectedModel?.modes ?? [];
@@ -251,10 +253,11 @@ export default function Create() {
     });
 
     const fullPrompt = [prompt.trim(), suffix].filter(Boolean).join(", ");
+    const fullNegative = [negative.trim(), negSuffix].filter(Boolean).join(", ");
     try {
       const gen = await createGen.mutateAsync({
         prompt: fullPrompt,
-        negative_prompt: negative.trim(),
+        negative_prompt: fullNegative,
         model: modelId,
         image_base64: isExtend ? "" : imageB64!,
         settings: filtered,
@@ -371,6 +374,11 @@ export default function Create() {
           multiline
           style={{ minHeight: 56, textAlignVertical: "top", paddingVertical: 12 }}
         />
+        {negSuffix.length > 0 && (
+          <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, lineHeight: 17, marginTop: 6, fontStyle: "italic" }}>
+            <Text style={{ fontWeight: "700" }}>+ auto-added: </Text>{negSuffix}
+          </Text>
+        )}
         {prompt.trim().length > 0 && (
           <Pressable testID="save-prompt-button" onPress={() => { savePrompt.mutate({ text: prompt.trim(), negative_prompt: negative.trim(), is_favourite: true }); toast.success("Prompt saved to favourites"); }} style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm }}>
             <Ionicons name="star-outline" size={16} color={colors.brandPrimary} />

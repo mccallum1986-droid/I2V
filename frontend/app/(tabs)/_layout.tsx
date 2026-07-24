@@ -4,11 +4,13 @@ import * as Haptics from "expo-haptics";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useSyncA2eToken } from "@/src/api/hooks";
 import { useTheme } from "@/src/theme";
 
 export default function TabsLayout() {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
+  useSyncA2eToken(); // re-apply a saved A2E token if the backend has forgotten it
 
   return (
     <Tabs

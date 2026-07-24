@@ -1,6 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
+import { storage } from "@/src/utils/storage";
 import { api } from "./client";
+
+const A2E_TOKEN_KEY = "a2e_token";
 
 // ---------------------------------------------------------------- types
 export type Model = {
@@ -94,13 +98,38 @@ export function useProviderConfig() {
 export function useSetProviderKey() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (a2e_api_key: string) =>
-      (await api.put<ProviderConfig>("/settings/provider", { a2e_api_key })).data,
+    mutationFn: async (a2e_api_key: string) => {
+      const res = (await api.put<ProviderConfig>("/settings/provider", { a2e_api_key })).data;
+      // Remember the token on-device so the app can silently re-sync it if the
+      // backend ever forgets it (e.g. after a redeploy). Clearing removes it.
+      if (a2e_api_key) await storage.secureSet(A2E_TOKEN_KEY, a2e_api_key);
+      else await storage.secureRemove(A2E_TOKEN_KEY);
+      return res;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["provider-config"] });
       qc.invalidateQueries({ queryKey: ["a2e-balance"] });
     },
   });
+}
+
+/** If the backend is in mock mode but we have a saved token on-device, re-apply
+ *  it automatically so the user never has to re-enter their A2E token. */
+export function useSyncA2eToken() {
+  const setKey = useSetProviderKey();
+  const cfg = useProviderConfig();
+  useEffect(() => {
+    if (cfg.data?.mode !== "mock") return;
+    let cancelled = false;
+    (async () => {
+      const token = await storage.secureGet(A2E_TOKEN_KEY, "");
+      if (!cancelled && typeof token === "string" && token) {
+        try { await setKey.mutateAsync(token); } catch { /* backend down — retry later */ }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.data?.mode]);
 }
 
 // ------------------------------------------------------- A2E credit balance

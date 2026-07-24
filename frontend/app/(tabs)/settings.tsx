@@ -13,6 +13,7 @@ import { toast } from "@/src/store/toast";
 import { radius, spacing, ThemeMode, useTheme } from "@/src/theme";
 
 const DEFAULT_SUFFIX = "cinematic, high quality, ultra detailed, smooth motion, keep the same face and body shape, follow the prompt exactly";
+const DEFAULT_NEG_SUFFIX = "blurry, low quality, deformed, distorted face, face morphing, changing face, different person, extra limbs, warping, watermark, bad anatomy";
 
 function Row({ icon, title, subtitle, right, onPress, testID }: { icon: keyof typeof Ionicons.glyphMap; title: string; subtitle?: string; right?: React.ReactNode; onPress?: () => void; testID?: string }) {
   const { colors } = useTheme();
@@ -48,6 +49,7 @@ export default function Settings() {
   const [a2eKey, setA2eKey] = useState("");
   const [savingKey, setSavingKey] = useState(false);
   const [promptSuffix, setPromptSuffix] = useState<string>(settings.prompt_suffix ?? DEFAULT_SUFFIX);
+  const [negSuffix, setNegSuffix] = useState<string>(settings.negative_suffix ?? DEFAULT_NEG_SUFFIX);
   const [savingSuffix, setSavingSuffix] = useState(false);
 
   const hasPin = useLockStore((s) => s.hasPin);
@@ -159,8 +161,9 @@ export default function Settings() {
           <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.sm, marginLeft: spacing.xs }}>Prompt add-on</Text>
           <Card style={{ gap: spacing.md }}>
             <Text style={{ color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19 }}>
-              Automatically added to the end of every prompt (shown greyed on the Create screen). Great for quality and keeping faces/bodies consistent. Leave it empty to turn it off.
+              Automatically added to the end of every prompt and negative prompt (shown greyed on the Create screen). Great for quality and keeping faces/bodies consistent. Leave a field empty to turn it off.
             </Text>
+            <Text style={{ color: colors.onSurface, fontSize: 13, fontWeight: "700" }}>Prompt add-on</Text>
             <TextField
               testID="prompt-suffix-input"
               value={promptSuffix}
@@ -170,14 +173,24 @@ export default function Settings() {
               style={{ minHeight: 70, textAlignVertical: "top", paddingVertical: 12 }}
               autoCapitalize="none"
             />
+            <Text style={{ color: colors.onSurface, fontSize: 13, fontWeight: "700" }}>Negative prompt add-on</Text>
+            <TextField
+              testID="neg-suffix-input"
+              value={negSuffix}
+              onChangeText={setNegSuffix}
+              placeholder="e.g. blurry, deformed, face morphing, different person"
+              multiline
+              style={{ minHeight: 70, textAlignVertical: "top", paddingVertical: 12 }}
+              autoCapitalize="none"
+            />
             <Button
               testID="save-prompt-suffix-button"
-              title="Save add-on"
+              title="Save add-ons"
               onPress={async () => {
                 setSavingSuffix(true);
-                const ok = await patchProfile({ settings: { ...settings, prompt_suffix: promptSuffix.trim() } });
+                const ok = await patchProfile({ settings: { ...settings, prompt_suffix: promptSuffix.trim(), negative_suffix: negSuffix.trim() } });
                 setSavingSuffix(false);
-                if (ok) toast.success("Prompt add-on saved");
+                if (ok) toast.success("Add-ons saved");
               }}
               loading={savingSuffix}
             />

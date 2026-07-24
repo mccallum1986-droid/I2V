@@ -121,11 +121,17 @@ DEFAULT_PROMPT_SUFFIX = (
     "keep the same face and body shape, follow the prompt exactly"
 )
 
+DEFAULT_NEGATIVE_SUFFIX = (
+    "blurry, low quality, deformed, distorted face, face morphing, "
+    "changing face, different person, extra limbs, warping, watermark, bad anatomy"
+)
+
 DEFAULT_SETTINGS = {
     "default_model": providers.DEFAULT_MODEL,
     "theme": "system",
     "notifications": True,
     "prompt_suffix": DEFAULT_PROMPT_SUFFIX,
+    "negative_suffix": DEFAULT_NEGATIVE_SUFFIX,
     "generation": {
         "duration": 5,
         "resolution": "720p",
@@ -540,6 +546,56 @@ async def _run_generation(gen_id: str):
                 "stage": st["stage"],
                 "updated_at": now_iso(),
             }},
+        )
+
+
+async def _resume_generation(gen_id: str):
+    """Resume polling a live generation whose in-flight task died (e.g. a backend
+    redeploy). Does NOT re-submit — it polls the existing A2E job, so no extra
+    credits are spent. A2E has usually finished it by now.
+    """
+    gen = await generations_col.find_one({"id": gen_id})
+    if not gen or gen.get("status") not in ("queued", "processing"):
+        return
+    provider = providers.get_provider(gen["model"])
+    job_id = gen.get("provider_job_id")
+    if not (provider and job_id and getattr(provider, "live_capable", False)):
+        return
+    family = getattr(provider, "a2e_family", "image2video")
+    key, _ = await resolve_a2e_key()
+    if not key:
+        return
+    while True:
+        await asyncio.sleep(3)
+        current = await generations_col.find_one({"id": gen_id})
+        if not current or current.get("status") == "cancelled":
+            return
+        try:
+            st = await asyncio.to_thread(a2e.poll, key, family, job_id)
+        except Exception as exc:  # noqa: BLE001
+            await _fail_generation(gen_id, _friendly_error(exc))
+            return
+        if st["status"] == "failed":
+            await _fail_generation(gen_id, st.get("error") or "Generation failed.")
+            return
+        if st["status"] == "completed":
+            try:
+                result = await asyncio.to_thread(a2e.fetch_result, key, family, job_id)
+            except Exception as exc:  # noqa: BLE001
+                await _fail_generation(gen_id, _friendly_error(exc))
+                return
+            await generations_col.update_one(
+                {"id": gen_id},
+                {"$set": {
+                    "status": "completed", "progress": 100.0, "stage": "Completed",
+                    "video_url": result["video_url"], "source_video_url": result["video_url"],
+                    "completed_at": now_iso(), "updated_at": now_iso(),
+                }},
+            )
+            return
+        await generations_col.update_one(
+            {"id": gen_id},
+            {"$set": {"progress": st["progress"], "stage": st["stage"], "updated_at": now_iso()}},
         )
 
 
@@ -1159,6 +1215,38 @@ async def repair_studio_video_urls():
     )
     if stale.modified_count:
         logger.info("Marked %d stale studio generations as failed", stale.modified_count)
+
+
+@app.on_event("startup")
+async def resume_inflight_generations():
+    """Restart polling for cloud generations whose task died on the last restart.
+
+    Frequent redeploys (free tier) kill in-flight polling tasks, leaving A2E
+    generations stuck at 'processing' even though A2E finished them. Re-attach a
+    poll (no re-submit, no extra credits) so they complete.
+    """
+    docs = await generations_col.find(
+        {"status": {"$in": ["queued", "processing"]}}, {"id": 1, "provider_job_id": 1}
+    ).to_list(200)
+    resumed = 0
+    for doc in docs:
+        if doc.get("provider_job_id"):
+            asyncio.create_task(_resume_generation(doc["id"]))
+            resumed += 1
+    if resumed:
+        logger.info("Resumed polling for %d in-flight generations", resumed)
+
+    # Fail generations that never got a provider job id and are too old to recover.
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=45)).isoformat()
+    stale = await generations_col.update_many(
+        {"status": {"$in": ["queued", "processing"]},
+         "provider_job_id": {"$in": [None, ""]}, "updated_at": {"$lt": cutoff}},
+        {"$set": {"status": "failed", "error": "Generation interrupted. Please try again.",
+                  "stage": "Failed", "updated_at": now_iso()}},
+    )
+    if stale.modified_count:
+        logger.info("Failed %d unrecoverable stale generations", stale.modified_count)
 
 
 @app.on_event("shutdown")
