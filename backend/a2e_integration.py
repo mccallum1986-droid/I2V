@@ -355,3 +355,48 @@ def fetch_result(key: str, family: str, job_id: str) -> Dict[str, Any]:
     if not url:
         raise RuntimeError("A2E finished but returned no video URL.")
     return {"video_url": url}
+
+
+def _shrink(item: Dict[str, Any], maxlen: int = 200) -> Dict[str, Any]:
+    """JSON-safe, compact view of a raw A2E item for diagnostics: long strings
+    (base64/URLs) are truncated, nested lists collapsed. No token is present."""
+    out: Dict[str, Any] = {}
+    for k, v in item.items():
+        if isinstance(v, str):
+            out[k] = v if len(v) <= maxlen else f"{v[:maxlen]}...(+{len(v) - maxlen} chars)"
+        elif isinstance(v, (int, float, bool)) or v is None:
+            out[k] = v
+        elif isinstance(v, dict):
+            out[k] = {kk: (f"{vv[:maxlen]}..." if isinstance(vv, str) and len(vv) > maxlen else vv)
+                      for kk, vv in list(v.items())[:20]}
+        elif isinstance(v, list):
+            out[k] = f"[list len {len(v)}]"
+        else:
+            out[k] = type(v).__name__
+    return out
+
+
+def debug_probe(key: str, family: str, job_id: str) -> Dict[str, Any]:
+    """Diagnostic: show whether/how a job appears in A2E's result list and what
+    the poller computes for it. Returns no secrets — safe to surface."""
+    result: Dict[str, Any] = {"family": family, "job_id": str(job_id)}
+    try:
+        items = _fetch_list(key, family)
+    except Exception as exc:  # noqa: BLE001
+        result["fetch_error"] = str(exc)
+        return result
+    result["items_returned"] = len(items)
+    result["ids_seen"] = [str(it.get("_id") or it.get("id")) for it in items[:25]]
+    result["id_found"] = str(job_id) in result["ids_seen"]
+    match = next((it for it in items if str(it.get("_id") or it.get("id")) == str(job_id)), None)
+    if match is not None:
+        result["matched_item"] = _shrink(match)
+        result["computed_status"] = _extract_status(match)
+        result["computed_url"] = _extract_url(match)
+    elif items:
+        # Job id not matched — show the newest item's real schema so we can see
+        # which key actually holds the id / status / result url.
+        result["sample_newest_item"] = _shrink(items[0])
+        result["sample_computed_status"] = _extract_status(items[0])
+        result["sample_computed_url"] = _extract_url(items[0])
+    return result

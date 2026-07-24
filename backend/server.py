@@ -785,6 +785,50 @@ async def get_generation(gen_id: str, user=Depends(get_current_user)):
     raise HTTPException(status_code=404, detail="Generation not found")
 
 
+@api.get("/debug/stuck")
+async def debug_stuck_generations():
+    """Temporary, no-auth diagnostic for stuck 'processing' cloud gens.
+
+    Returns, for each queued/processing generation, exactly what A2E reports for
+    its job — whether the job id is even found in A2E's result list, the raw
+    item's schema, and what the poller computes (status / result URL). No token,
+    image, or other secret is included. Single-user personal backend.
+    """
+    key, source = await resolve_a2e_key()
+    out: Dict[str, Any] = {
+        "has_key": bool(key),
+        "key_source": source,
+        "backend_base_url": RENDER_BASE_URL or None,
+        "gens": [],
+    }
+    docs = await generations_col.find({"status": {"$in": ["queued", "processing"]}}).to_list(50)
+    for d in docs:
+        provider = providers.get_provider(d.get("model", ""))
+        family = getattr(provider, "a2e_family", None) if provider else None
+        live = bool(provider and getattr(provider, "live_capable", False))
+        entry: Dict[str, Any] = {
+            "id": d.get("id"),
+            "model": d.get("model"),
+            "family": family,
+            "status": d.get("status"),
+            "stage": d.get("stage"),
+            "provider_job_id": d.get("provider_job_id"),
+            "task_type": d.get("task_type"),
+            "live_capable": live,
+            "created_at": d.get("created_at"),
+            "updated_at": d.get("updated_at"),
+        }
+        if key and live and family and d.get("provider_job_id"):
+            try:
+                entry["probe"] = await asyncio.to_thread(
+                    a2e.debug_probe, key, family, d["provider_job_id"]
+                )
+            except Exception as exc:  # noqa: BLE001
+                entry["probe_error"] = str(exc)
+        out["gens"].append(entry)
+    return out
+
+
 @api.post("/generations/{gen_id}/cancel")
 async def cancel_generation(gen_id: str, user=Depends(get_current_user)):
     doc = await generations_col.find_one({"id": gen_id, "user_id": user["id"]})
