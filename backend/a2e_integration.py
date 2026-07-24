@@ -376,6 +376,42 @@ def _shrink(item: Dict[str, Any], maxlen: int = 200) -> Dict[str, Any]:
     return out
 
 
+def _shrink_any(v: Any, depth: int = 0, maxlen: int = 200) -> Any:
+    """Recursive, JSON-safe, bounded view of an arbitrary response body."""
+    if isinstance(v, str):
+        return v if len(v) <= maxlen else f"{v[:maxlen]}...(+{len(v) - maxlen} chars)"
+    if isinstance(v, (int, float, bool)) or v is None:
+        return v
+    if isinstance(v, dict):
+        if depth >= 5:
+            return "{...}"
+        return {k: _shrink_any(val, depth + 1, maxlen) for k, val in list(v.items())[:40]}
+    if isinstance(v, list):
+        if depth >= 5:
+            return f"[list len {len(v)}]"
+        return {"__list_len__": len(v), "first": _shrink_any(v[0], depth + 1, maxlen) if v else None}
+    return type(v).__name__
+
+
+def _raw_first_page(key: str, family: str) -> Dict[str, Any]:
+    """Fetch page 1 of a family's result list and return its raw (shrunk) body,
+    so we can see exactly where items / ids / statuses live in the response."""
+    cfg = _FAMILIES[family]
+    url = f"{BASE}/{cfg['list']}"
+    params = {cfg["page_param"]: 1, "pageSize": _LIST_PAGE_SIZE}
+    info: Dict[str, Any] = {"url": url, "params": params}
+    try:
+        resp = requests.get(url, headers=_headers(key), params=params, timeout=POLL_TIMEOUT)
+        info["http_status"] = resp.status_code
+        try:
+            info["json"] = _shrink_any(resp.json())
+        except ValueError:
+            info["text"] = resp.text[:800]
+    except Exception as exc:  # noqa: BLE001
+        info["request_error"] = str(exc)
+    return info
+
+
 def debug_probe(key: str, family: str, job_id: str) -> Dict[str, Any]:
     """Diagnostic: show whether/how a job appears in A2E's result list and what
     the poller computes for it. Returns no secrets — safe to surface."""
@@ -384,6 +420,7 @@ def debug_probe(key: str, family: str, job_id: str) -> Dict[str, Any]:
         items = _fetch_list(key, family)
     except Exception as exc:  # noqa: BLE001
         result["fetch_error"] = str(exc)
+        result["raw_first_page"] = _raw_first_page(key, family)
         return result
     result["items_returned"] = len(items)
     result["ids_seen"] = [str(it.get("_id") or it.get("id")) for it in items[:25]]
@@ -399,4 +436,8 @@ def debug_probe(key: str, family: str, job_id: str) -> Dict[str, Any]:
         result["sample_newest_item"] = _shrink(items[0])
         result["sample_computed_status"] = _extract_status(items[0])
         result["sample_computed_url"] = _extract_url(items[0])
+    if not result["id_found"]:
+        # Job wasn't located (0 items or a different schema) — dump the raw list
+        # response so we can see the real shape and fix parsing/params.
+        result["raw_first_page"] = _raw_first_page(key, family)
     return result
