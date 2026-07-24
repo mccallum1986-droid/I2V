@@ -40,10 +40,13 @@ POLL_TIMEOUT = 20
 _LIST_PAGE_SIZE = 20
 _LIST_MAX_PAGES = 3
 
-# Per-family endpoint routing. `page_param` differs: awsList pages by `current`,
-# the Wan list pages by `pageNum`.
+# Per-family endpoint routing. Each family lists its own tasks via `allRecords`
+# (paged by `pageNum`), returning `data.rows[]` with `current_status`/`result_url`.
+# NB: image2video must use userImage2Video/allRecords — NOT video/awsList, which
+# lists the separate Avatar/lip-sync family and never contains i2v jobs (that
+# mismatch left every A2E-Faces clip stuck 'processing').
 _FAMILIES: Dict[str, Dict[str, str]] = {
-    "image2video": {"start": "userImage2Video/start", "list": "video/awsList", "page_param": "current"},
+    "image2video": {"start": "userImage2Video/start", "list": "userImage2Video/allRecords", "page_param": "pageNum"},
     "wan25": {"start": "userWan25/start", "list": "userWan25/allRecords", "page_param": "pageNum"},
     "wanspicy": {"start": "userWanSpicy/start", "list": "userWanSpicy/allRecords", "page_param": "pageNum"},
 }
@@ -83,9 +86,8 @@ _NEGATIVE_BASE = (
 )
 
 # Field names A2E uses for a job's state / output URL inside a result item.
-# The two families differ (all live-verified):
-#   Face (awsList): status `status`="success", url `result`,      list `data.data`
-#   Wan  (allRecords): status `current_status`="completed", url `result_url`, list `data.rows`
+# All families share the `allRecords` shape (live-verified):
+#   status `current_status`="completed", url `result_url`, list `data.rows`.
 _STATUS_KEYS = ("current_status", "status", "state", "video_status", "process_status")
 _URL_KEYS = ("result", "result_url", "video_url", "videoUrl", "url", "output", "video")
 _DONE_WORDS = {"success", "succeeded", "completed", "complete", "done", "finished"}
