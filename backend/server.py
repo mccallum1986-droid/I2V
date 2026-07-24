@@ -31,6 +31,13 @@ load_dotenv(ROOT_DIR / ".env")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("wanstudio")
 
+# gen_ids that currently have a resume-poll loop attached, so the opportunistic
+# re-attach on the read endpoints can't spawn duplicate pollers for one job.
+_RESUMING: set[str] = set()
+# A live gen whose `updated_at` is older than this (seconds) is treated as
+# having a dead poll loop — safe because a healthy loop touches it every ~2s.
+_RESUME_STALE_SECONDS = 20
+
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
@@ -599,6 +606,51 @@ async def _resume_generation(gen_id: str):
         )
 
 
+def _kick_resume(gen_id: str) -> None:
+    """Attach a resume-poll loop for a stuck live generation, at most once.
+
+    Deduped via `_RESUMING` so the opportunistic re-attach on the read
+    endpoints (which the app hits every ~1.5s while a screen is open) can't
+    pile up duplicate pollers for the same job.
+    """
+    if gen_id in _RESUMING:
+        return
+    _RESUMING.add(gen_id)
+
+    async def _runner():
+        try:
+            await _resume_generation(gen_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("resume poll crashed for %s", gen_id)
+        finally:
+            _RESUMING.discard(gen_id)
+
+    asyncio.create_task(_runner())
+
+
+def _resume_if_stuck(doc: Dict[str, Any]) -> None:
+    """Self-heal: if a live gen is stuck (queued/processing, has an A2E job id,
+    and no poll loop has touched it in a while), re-attach a poll loop so it can
+    finish. This runs on every gallery/detail read, so a job A2E already
+    completed gets picked up the next time the app refreshes — even while the
+    backend is awake and the original poll task has died.
+    """
+    if doc.get("status") not in ("queued", "processing"):
+        return
+    if not doc.get("provider_job_id"):
+        return
+    provider = providers.get_provider(doc.get("model", ""))
+    if not (provider and getattr(provider, "live_capable", False)):
+        return
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(doc.get("updated_at") or "")).total_seconds()
+    except (TypeError, ValueError):
+        age = 1e9  # unparseable timestamp -> treat as stale
+    if age < _RESUME_STALE_SECONDS:
+        return  # a live poll loop is still working this job
+    _kick_resume(doc["id"])
+
+
 def _new_generation_doc(user_id: str, body: GenerationCreate, provider) -> Dict[str, Any]:
     filtered = {k: v for k, v in body.settings.items() if k in provider.supported_settings}
     return {
@@ -663,6 +715,8 @@ async def list_generations(
     # gallery shows nothing). The per-item detail endpoint still returns them.
     LIST_PROJ = {"image_base64": 0, "thumbnail_base64": 0}
     docs = await generations_col.find(query, LIST_PROJ).sort(sort_field, direction).to_list(500)
+    for d in docs:
+        _resume_if_stuck(d)  # re-attach a poll loop for any gen A2E already finished
     results = [public_generation(d) for d in docs]
 
     # Merge studio generations into gallery (also without embedded images)
@@ -700,6 +754,7 @@ async def list_generations(
 async def get_generation(gen_id: str, user=Depends(get_current_user)):
     doc = await generations_col.find_one({"id": gen_id, "user_id": user["id"]})
     if doc:
+        _resume_if_stuck(doc)  # re-attach a poll loop if A2E already finished this one
         return public_generation(doc)
     # Fall back to studio generations
     sdoc = await studio_gens_col.find_one({"id": gen_id, "user_id": user["id"]})
@@ -1231,7 +1286,7 @@ async def resume_inflight_generations():
     resumed = 0
     for doc in docs:
         if doc.get("provider_job_id"):
-            asyncio.create_task(_resume_generation(doc["id"]))
+            _kick_resume(doc["id"])
             resumed += 1
     if resumed:
         logger.info("Resumed polling for %d in-flight generations", resumed)
