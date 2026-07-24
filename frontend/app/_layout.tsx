@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { LockGate } from "@/src/components/lock";
 import { ToastHost } from "@/src/components/ToastHost";
 import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 import { useAuthStore } from "@/src/store/auth";
@@ -33,6 +34,7 @@ function Providers() {
         <Stack.Screen name="queue" options={{ presentation: "card" }} />
       </Stack>
       <ToastHost />
+      <LockGate />
     </View>
   );
 }

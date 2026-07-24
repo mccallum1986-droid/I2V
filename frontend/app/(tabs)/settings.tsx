@@ -5,8 +5,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, apiError } from "@/src/api/client";
 import { useA2eBalance, useModels, useProviderConfig, useSetProviderKey, useStudioConfig, useSetStudioConfig } from "@/src/api/hooks";
+import { PinSetupModal } from "@/src/components/lock";
 import { Button, Card, DisplayText, Segmented, TextField } from "@/src/components/ui";
 import { useAuthStore } from "@/src/store/auth";
+import { useLockStore } from "@/src/store/lock";
 import { toast } from "@/src/store/toast";
 import { radius, spacing, ThemeMode, useTheme } from "@/src/theme";
 
@@ -47,6 +49,10 @@ export default function Settings() {
   const [savingKey, setSavingKey] = useState(false);
   const [promptSuffix, setPromptSuffix] = useState<string>(settings.prompt_suffix ?? DEFAULT_SUFFIX);
   const [savingSuffix, setSavingSuffix] = useState(false);
+
+  const hasPin = useLockStore((s) => s.hasPin);
+  const clearPin = useLockStore((s) => s.clearPin);
+  const [showPinSetup, setShowPinSetup] = useState(false);
 
   const studioCfg = useStudioConfig();
   const setStudioConfig = useSetStudioConfig();
@@ -279,6 +285,28 @@ export default function Settings() {
           </Card>
         </View>
 
+        {/* Security */}
+        <View>
+          <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.sm, marginLeft: spacing.xs }}>Security</Text>
+          <Card style={{ gap: spacing.md }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: spacing.sm }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: hasPin ? colors.success : colors.warning }} />
+              <Text style={{ color: colors.onSurface, fontSize: 15, fontWeight: "700" }}>{hasPin ? "App lock on" : "App lock off"}</Text>
+            </View>
+            <Text style={{ color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19 }}>
+              Require a 4-digit PIN each time you open the app. (Face/fingerprint unlock needs a new app build — it can be added later.)
+            </Text>
+            {hasPin ? (
+              <>
+                <Button testID="change-pin-button" title="Change PIN" variant="secondary" onPress={() => setShowPinSetup(true)} />
+                <Button testID="remove-pin-button" title="Remove app lock" variant="danger" onPress={async () => { await clearPin(); toast.success("App lock removed"); }} />
+              </>
+            ) : (
+              <Button testID="enable-pin-button" title="Enable app lock" onPress={() => setShowPinSetup(true)} />
+            )}
+          </Card>
+        </View>
+
         {/* Studio — self-hosted GPU */}
         <View>
           <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: spacing.sm, marginLeft: spacing.xs }}>Studio (Self-hosted GPU)</Text>
@@ -343,6 +371,8 @@ export default function Settings() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <PinSetupModal visible={showPinSetup} onClose={() => setShowPinSetup(false)} />
     </View>
   );
 }
