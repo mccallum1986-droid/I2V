@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AppState, Modal, Pressable, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -10,6 +10,9 @@ import { spacing, useTheme } from "@/src/theme";
 
 const PIN_LENGTH = 4;
 const KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"];
+// Only re-lock if the app was in the background longer than this, so quick
+// app-switches / phone-screen locks don't force re-entering the PIN.
+const LOCK_GRACE_MS = 2 * 60 * 1000;
 
 /** Numeric PIN entry: dots + keypad. Calls onComplete when PIN_LENGTH digits are in. */
 function PinPad({ title, subtitle, error, onComplete }: { title: string; subtitle?: string; error?: string; onComplete: (pin: string) => void }) {
@@ -80,9 +83,18 @@ export function LockGate() {
 
   useEffect(() => { hydrate(); }, [hydrate]);
 
-  // Re-lock whenever the app is sent to the background.
+  // Re-lock only after the app has been backgrounded past the grace period, so a
+  // quick switch or a phone-screen lock doesn't make you re-enter the PIN.
+  const backgroundedAt = useRef<number | null>(null);
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (s) => { if (s === "background") lock(); });
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s === "background") {
+        backgroundedAt.current = Date.now();
+      } else if (s === "active") {
+        if (backgroundedAt.current && Date.now() - backgroundedAt.current > LOCK_GRACE_MS) lock();
+        backgroundedAt.current = null;
+      }
+    });
     return () => sub.remove();
   }, [lock]);
 
