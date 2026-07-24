@@ -516,30 +516,15 @@ async def _run_generation(gen_id: str):
                 "stage": "Completed",
                 "completed_at": now_iso(),
                 "updated_at": now_iso(),
+                # Serve A2E's own CDN URL directly so the app streams it exactly
+                # like a browser does — fast, and no double-hop through this (free,
+                # sleep-prone) backend or MongoDB's 16MB document limit. The URL is
+                # A2E's temporary (~3-day) link; users can Save clips they want to
+                # keep. `source_video_url` keeps it available for Video Extend.
+                "video_url": final_url,
             }
             if live:
-                # A2E serves the clip from a temporary CDN that the mobile player
-                # and downloader don't handle well (especially longer clips). Pull
-                # the bytes here and serve them from our own HTTPS URL instead —
-                # reliable playback/download, and it survives A2E's ~3-day links.
-                # Keep the source URL as a live fallback for the proxy route.
                 update["source_video_url"] = final_url
-                try:
-                    content = await asyncio.to_thread(
-                        lambda: requests.get(final_url, timeout=180).content
-                    )
-                    if content:
-                        await gen_videos_col.update_one(
-                            {"_id": gen_id},
-                            {"$set": {"data": base64.b64encode(content).decode()}},
-                            upsert=True,
-                        )
-                        if RENDER_BASE_URL:
-                            final_url = f"{RENDER_BASE_URL}/api/generations/{gen_id}/video"
-                        logger.info("Stored %d bytes of cloud video for %s", len(content), gen_id)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Could not persist cloud video for %s: %s", gen_id, exc)
-            update["video_url"] = final_url
             await generations_col.update_one({"id": gen_id}, {"$set": update})
             return
         await generations_col.update_one(

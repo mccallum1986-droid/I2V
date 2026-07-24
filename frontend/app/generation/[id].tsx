@@ -53,22 +53,15 @@ export default function GenerationDetail() {
   const [videoLoading, setVideoLoading] = useState(false);
 
   useEffect(() => {
-    if (!gen?.video_url) return;
-    // Resolve relative proxy URLs (e.g. "/api/studio/...") against the backend host.
+    if (!gen?.video_url) { setLocalVideoUri(null); return; }
+    // Stream the video directly (like a browser) instead of pre-downloading it to
+    // a cache file — the pre-download step could hang or save a bad file for
+    // larger clips, leaving the player stuck at 0:00. Resolve relative proxy URLs
+    // (e.g. "/api/studio/...") against the backend host.
     const base = (process.env.EXPO_PUBLIC_BACKEND_URL ?? "").replace(/\/$/, "");
     const remoteUrl = gen.video_url.startsWith("/") ? `${base}${gen.video_url}` : gen.video_url;
-    const cachePath = (FileSystem.cacheDirectory ?? "") + `${gen.id}.mp4`;
-    setVideoLoading(true);
-    FileSystem.getInfoAsync(cachePath).then((info) => {
-      if (info.exists) {
-        setLocalVideoUri(cachePath);
-        setVideoLoading(false);
-      } else {
-        FileSystem.downloadAsync(remoteUrl, cachePath)
-          .then(({ uri }) => { setLocalVideoUri(uri); setVideoLoading(false); })
-          .catch(() => { setLocalVideoUri(remoteUrl); setVideoLoading(false); });
-      }
-    });
+    setLocalVideoUri(remoteUrl);
+    setVideoLoading(false);
   }, [gen?.video_url]);
 
   const player = useVideoPlayer(localVideoUri, (p) => {
