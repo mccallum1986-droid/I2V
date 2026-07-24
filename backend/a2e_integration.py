@@ -45,6 +45,7 @@ _LIST_MAX_PAGES = 3
 _FAMILIES: Dict[str, Dict[str, str]] = {
     "image2video": {"start": "userImage2Video/start", "list": "video/awsList", "page_param": "current"},
     "wan25": {"start": "userWan25/start", "list": "userWan25/allRecords", "page_param": "pageNum"},
+    "wanspicy": {"start": "userWanSpicy/start", "list": "userWanSpicy/allRecords", "page_param": "pageNum"},
 }
 
 # A2E face model clip lengths (seconds) via `video_time`.
@@ -59,6 +60,12 @@ _WAN_DURATIONS: Dict[str, tuple] = {
 }
 _WAN_DURATION_DEFAULT = (5, 10, 15)
 _RESOLUTIONS = {"480p", "720p", "1080p"}
+
+# Wan Spicy (uncensored) clip lengths per model. 2.2 supports 5/8; 2.7 supports 2-15.
+_SPICY_DURATIONS: Dict[str, tuple] = {
+    "wan2.2-i2v-spicy": (5, 8),
+    "wan2.7-i2v-spicy": (5, 10, 15),
+}
 
 # Prepended to every user prompt to push toward clean, high quality output.
 # (Shared with the self-hosted Studio path, so kept engine-neutral.)
@@ -185,6 +192,26 @@ def submit(
     """Queue a generation on the given engine family. Returns A2E's job id."""
     enhanced, full_negative = _build_prompt(prompt, negative_prompt)
     enhance = _bool(settings.get("enhance_prompt"), True)
+
+    if family == "wanspicy":
+        allowed = _SPICY_DURATIONS.get(model or "", (5,))
+        payload: Dict[str, Any] = {
+            "name": name,
+            "model": model,  # wan2.2-i2v-spicy | wan2.7-i2v-spicy
+            "prompt": enhanced,
+            "image_url": image_url,
+            "resolution": _resolution(settings),
+            "duration": _snap(settings.get("duration", allowed[0]), allowed, allowed[0]),  # number, not str
+            "prompt_extend": enhance,
+        }
+        if model == "wan2.7-i2v-spicy":  # negative_prompt only valid on 2.7 spicy
+            payload["negative_prompt"] = full_negative
+        seed = _seed(settings)
+        if seed is not None:
+            payload["seed"] = seed
+        # Deliberately NOT setting minor_suspected_skip -> A2E's minor-detection
+        # safeguard stays active.
+        return _post_start(key, "wanspicy", payload)
 
     if family == "wan25":
         allowed = _WAN_DURATIONS.get(model or "", _WAN_DURATION_DEFAULT)

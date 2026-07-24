@@ -221,6 +221,40 @@ class Wan25Provider(_WanBase):
     credit_rate = 15
 
 
+class Wan22SpicyProvider(_A2EBase):
+    """Uncensored Wan 2.2 (userWanSpicy). Image-to-video, no audio."""
+    model_id = "wan-2.2-spicy"
+    name = "Wan 2.2 Spicy"
+    description = "Uncensored Wan 2.2 image-to-video. 5 or 8 seconds, no audio."
+    speed = "Balanced"
+    quality = "High"
+    use_case = "Unrestricted image-to-video."
+    gen_seconds = 18
+    badge = "Spicy"
+    a2e_family = "wanspicy"
+    a2e_model = "wan2.2-i2v-spicy"
+    supported_settings = ["duration", "resolution", "seed", "enhance_prompt"]
+    duration_options = [5, 8]
+    resolution_options = ["480p", "720p"]
+
+
+class Wan27SpicyProvider(_A2EBase):
+    """Uncensored Wan 2.7 (userWanSpicy). Image-to-video."""
+    model_id = "wan-2.7-spicy"
+    name = "Wan 2.7 Spicy"
+    description = "Uncensored Wan 2.7 image-to-video. Up to 1080p."
+    speed = "Slow"
+    quality = "Ultra"
+    use_case = "Unrestricted, high-quality image-to-video."
+    gen_seconds = 30
+    badge = "Spicy"
+    a2e_family = "wanspicy"
+    a2e_model = "wan2.7-i2v-spicy"
+    supported_settings = ["duration", "resolution", "seed", "enhance_prompt"]
+    duration_options = [5, 10, 15]
+    resolution_options = ["720p", "1080p"]
+
+
 _REGISTRY: Dict[str, ImageToVideoProvider] = {
     p.model_id: p
     for p in (
@@ -229,6 +263,8 @@ _REGISTRY: Dict[str, ImageToVideoProvider] = {
         Wan26Provider(),
         Wan25Provider(),
         A2EFaceProvider(),
+        Wan27SpicyProvider(),
+        Wan22SpicyProvider(),
     )
 }
 
