@@ -91,6 +91,17 @@ def _headers(key: str) -> Dict[str, str]:
     return {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
 
+def get_credits(key: str) -> Dict[str, Any]:
+    """Return the account's live A2E balance: {coins, diamonds}."""
+    resp = requests.get(f"{BASE}/user/remainingCoins", headers=_headers(key), timeout=POLL_TIMEOUT)
+    if resp.status_code in (401, 403):
+        raise RuntimeError("A2E rejected the API token.")
+    if not resp.ok:
+        raise RuntimeError(f"A2E credits error {resp.status_code}: {resp.text[:200]}")
+    data = resp.json().get("data") or {}
+    return {"coins": data.get("coins"), "diamonds": data.get("diamonds")}
+
+
 def _build_prompt(prompt: str, negative_prompt: str) -> tuple[str, str]:
     enhanced = f"{_PROMPT_PREFIX}{prompt}".strip()
     user_neg = negative_prompt.strip()

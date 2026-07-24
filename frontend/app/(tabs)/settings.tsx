@@ -4,7 +4,7 @@ import { Modal, Pressable, ScrollView, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, apiError } from "@/src/api/client";
-import { useModels, useProviderConfig, useSetProviderKey, useStudioConfig, useSetStudioConfig } from "@/src/api/hooks";
+import { useA2eBalance, useModels, useProviderConfig, useSetProviderKey, useStudioConfig, useSetStudioConfig } from "@/src/api/hooks";
 import { Button, Card, DisplayText, Segmented, TextField } from "@/src/components/ui";
 import { useAuthStore } from "@/src/store/auth";
 import { toast } from "@/src/store/toast";
@@ -35,6 +35,7 @@ export default function Settings() {
   const models = useModels();
   const providerCfg = useProviderConfig();
   const setProviderKey = useSetProviderKey();
+  const balance = useA2eBalance();
 
   const settings = user?.settings ?? {};
   const [editName, setEditName] = useState(false);
@@ -175,6 +176,19 @@ export default function Settings() {
                 <Text style={{ color: colors.onSurfaceTertiary, fontSize: 12 }}>{cfg.key_masked}</Text>
               )}
             </View>
+            {isLive && (
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.brandTertiary, borderRadius: radius.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="server-outline" size={16} color={colors.brandPrimary} />
+                  <Text style={{ color: colors.onSurface, fontWeight: "600", fontSize: 14 }}>A2E balance</Text>
+                </View>
+                <Text testID="a2e-balance" style={{ color: colors.brandPrimary, fontWeight: "800", fontSize: 15 }}>
+                  {balance.data?.coins != null
+                    ? `${String(balance.data.coins).replace(/\B(?=(\d{3})+(?!\d))/g, ",")} credits`
+                    : balance.isLoading ? "…" : "—"}
+                </Text>
+              </View>
+            )}
             <Text style={{ color: colors.onSurfaceSecondary, fontSize: 13, lineHeight: 19 }}>
               {isLive
                 ? "Generating real videos via A2E (video.a2e.ai). You're billed per clip by A2E — best with a clear photo of a person."

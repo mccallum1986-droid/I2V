@@ -93,7 +93,27 @@ export function useSetProviderKey() {
   return useMutation({
     mutationFn: async (a2e_api_key: string) =>
       (await api.put<ProviderConfig>("/settings/provider", { a2e_api_key })).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["provider-config"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["provider-config"] });
+      qc.invalidateQueries({ queryKey: ["a2e-balance"] });
+    },
+  });
+}
+
+// ------------------------------------------------------- A2E credit balance
+export type A2eBalance = {
+  has_key: boolean;
+  coins: number | null;
+  diamonds: number | null;
+  error?: string;
+};
+
+export function useA2eBalance() {
+  return useQuery({
+    queryKey: ["a2e-balance"],
+    queryFn: async () => (await api.get<A2eBalance>("/settings/balance")).data,
+    staleTime: 1000 * 20,
+    refetchInterval: 1000 * 60, // keep it fresh while a screen is open
   });
 }
 
@@ -147,7 +167,10 @@ export function useCreateGeneration() {
       image_base64: string;
       settings: Record<string, any>;
     }) => (await api.post<Generation>("/generations", payload)).data,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["generations"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["generations"] });
+      qc.invalidateQueries({ queryKey: ["a2e-balance"] }); // coins were just spent
+    },
   });
 }
 

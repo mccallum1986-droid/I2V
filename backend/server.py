@@ -329,6 +329,19 @@ async def get_provider_settings(user=Depends(get_current_user)):
     return await _provider_status()
 
 
+@api.get("/settings/balance")
+async def get_balance(user=Depends(get_current_user)):
+    """Live A2E credit balance (coins/diamonds) for the configured token."""
+    key, _ = await resolve_a2e_key()
+    if not key:
+        return {"has_key": False, "coins": None, "diamonds": None}
+    try:
+        info = await asyncio.to_thread(a2e.get_credits, key)
+        return {"has_key": True, "coins": info["coins"], "diamonds": info["diamonds"]}
+    except Exception as exc:  # noqa: BLE001 - surface gracefully to the app
+        return {"has_key": True, "coins": None, "diamonds": None, "error": str(exc)}
+
+
 @api.put("/settings/provider")
 async def set_provider_settings(body: ProviderKeyUpdate, user=Depends(get_current_user)):
     val = body.a2e_api_key.strip()
